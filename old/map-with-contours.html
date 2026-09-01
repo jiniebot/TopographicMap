@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DayZ Map with Elevation Contours</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Turf.js for geometric operations (boolean union, etc) -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="./public/css/map.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+            background: #1a086b;
+        }
+
+        .controls {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-size: 13px;
+            width: 320px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .controls h3 {
+            margin-bottom: 10px;
+            font-size: 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+        }
+
+        .control-group input[type="text"],
+        .control-group input[type="range"],
+        .control-group input[type="number"],
+        .control-group input[type="color"],
+        .control-group select {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 11px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .control-group input[type="text"]:focus,
+        .control-group input[type="number"]:focus {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .button-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        button {
+            padding: 7px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        button:active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        button.active {
+            background: rgba(100, 200, 255, 0.4);
+            border-color: rgba(100, 200, 255, 0.6);
+        }
+
+        .status {
+            margin-top: 12px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            border-left: 2px solid rgba(76, 175, 80, 0.6);
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .status.loading {
+            border-left-color: rgba(255, 193, 7, 0.6);
+        }
+
+        .status.error {
+            border-left-color: rgba(244, 67, 54, 0.6);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 10px 0;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.6);
+            line-height: 1.4;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <div class="controls">
+        <h3>DayZ Map Layers</h3>
+
+        <div class="control-group">
+            <label style="font-weight: bold; color: #fff;">Map</label>
+            <div class="button-row">
+                <button id="mapSelectChernarus" class="map-select-btn active" data-map="Chernarus">Chernarus</button>
+                <button id="mapSelectSakhal" class="map-select-btn" data-map="Sakhal">Sakhal</button>
+                <button id="mapSelectLivonia" class="map-select-btn" data-map="Livonia">Livonia</button>
+            </div>
+            <div class="hint" id="mapSelectHint">Livonia Raster now draws real top-down model imagery. Its satellite terrain background is still pending.</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="control-group">
+            <label style="font-weight: bold; color: #fff;">Map Style</label>
+            <div class="button-row">
+                <button id="baseToggleSat" class="active">Raster</button>
+                <button id="baseToggleTopo">Vector</button>
+            </div>
+            <div class="hint">Raster uses top-down object images. Vector uses projected model geometry over elevation topography.</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3>Render Layers</h3>
+        <div class="checkbox-group" style="padding-left: 6px;">
+            <input type="checkbox" id="toggleVectorTiles" checked />
+            <label for="toggleVectorTiles">Show Map Objects (roads, buildings, trees, etc.)</label>
+        </div>
+        <div id="categoryToggles" style="max-height: 300px; overflow-y: auto; padding: 8px 0; display: none;">
+            <!-- Legacy per-category vector rendering - disabled by default, see rasterized tile pyramid instead -->
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="status" id="status">
+            Ready.
+        </div>
+    </div>
+    <!-- Configuration and Styles -->
+    <script src="./public/js/config.js"></script>
+    <script src="./public/js/map-styles.js"></script>
+
+    <!-- Geometry Utilities (no dependencies) -->
+    <script src="./public/js/map-geometry.js"></script>
+
+    <!-- Road and Path Drawing -->
+    <script src="./public/js/map-roads.js"></script>
+
+    <!-- Polygon Processing -->
+    <script src="./public/js/map-polygon.js"></script>
+
+    <!-- Union and Merge Operations -->
+    <script src="./public/js/map-unions.js"></script>
+
+    <!-- Rendering and Visual Effects -->
+    <script src="./public/js/map-render.js"></script>
+
+    <!-- Utilities and Helpers -->
+    <script src="./public/js/map-utils.js"></script>
+
+    <!-- Export Functions -->
+    <script src="./public/js/map-export.js"></script>
+
+    <!-- Core Map Functions -->
+    <script src="./public/js/map-core.js"></script>
+    <script src="./public/js/prebuilt-roads-loader.js"></script>
+
+    <!-- Initialization Script -->
+    <script>
+        // Per-map registry - mirrors tools/map-config.js (the Node-side build
+        // pipeline's copy of the same data). Sakhal/Livonia only have
+        // elevation-derived topographic data so far - no satellite imagery or
+        // Map Objects placement data - so hasSat/hasObjects gate those controls.
+        const MAPS = {
+            Chernarus: { mapSize: 15360, contoursFile: './out/chernarus_contours_10m.geojson', waterElevCutoff: 0, hasSat: true, satPath: 'data/Chernarus/Sat/{z}/{x}/{y}.png', satNativeZoom: 6, hasObjects: true, colors: {} },
+            // Slight per-map tint on top of the shared tan/beige land color -
+            // Sakhal's arctic setting reads a touch icier/blue, Livonia's
+            // temperate forest a touch greener. Subtle on purpose (see
+            // displayTopographic's colorOverrides param in map-core.js).
+            Sakhal: { mapSize: 15360, contoursFile: './out/sakhal_contours_10m.geojson', waterElevCutoff: 0, hasSat: false, hasObjects: false, colors: { landColor: '#DFE3E6' } },
+            Livonia: { mapSize: 12800, contoursFile: './out/livonia_contours_10m.geojson', waterElevCutoff: 171, hasSat: true, satPath: 'data/Livonia/Sat/{z}/{x}/{y}.png', satNativeZoom: 6, hasRasterObjects: true, hasObjects: true, colors: { landColor: '#DEE6D2' } },
+        };
+        let activeMapName = 'Chernarus';
+        const topoGeojsonByMap = {};
+
+        // Tile layers storage
+        let satTileLayer;
+        let vectorTileLayer;
+        let rasterObjectLayer;
+        let topoGeojson = null;
+        let baseMode = 'sat';
+        // Legacy per-category live vector rendering (loadCategory/map-unions.js/etc.) is
+        // superseded by the rasterized vectorTileLayer above. Kept available via
+        // ?legacyVectors=1 as a rollback path while the tile pipeline is unproven.
+        const legacyVectorsEnabled = new URLSearchParams(location.search).has('legacyVectors');
+        function buildCategoryTogglesFallback() {
+            const container = document.getElementById("categoryToggles");
+            if (!container) return;
+            const cats = window.categories || (mapStyles?.categories
+                ? Object.entries(mapStyles.categories).map(([name, val]) => ({
+                    name,
+                    label: val.label,
+                    color: val.fillColor,
+                }))
+                : []);
+            if (!cats || cats.length === 0) return;
+            container.innerHTML = "";
+            cats.forEach((cat) => {
+                const div = document.createElement("div");
+                div.className = "checkbox-group";
+                div.style.paddingLeft = "6px";
+                div.style.marginBottom = "4px";
+
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.id = `cat-${cat.name}`;
+                checkbox.checked = false;
+
+                const label = document.createElement("label");
+                label.htmlFor = `cat-${cat.name}`;
+                label.style.flex = "1";
+
+                const colorDot = document.createElement("span");
+                colorDot.style.display = "inline-block";
+                colorDot.style.width = "10px";
+                colorDot.style.height = "10px";
+                colorDot.style.backgroundColor = cat.color || "#999";
+                colorDot.style.borderRadius = "2px";
+                colorDot.style.marginRight = "6px";
+                colorDot.style.verticalAlign = "middle";
+
+                label.appendChild(colorDot);
+                label.appendChild(document.createTextNode(cat.label || cat.name));
+
+                checkbox.addEventListener("change", async (e) => {
+                    if (e.target.checked) {
+                        if (typeof loadCategory === "function") {
+                            await loadCategory(cat.name);
+                        }
+                    } else if (typeof clearCategory === "function") {
+                        clearCategory(cat.name);
+                    }
+                });
+
+                div.appendChild(checkbox);
+                div.appendChild(label);
+                container.appendChild(div);
+            });
+        }
+
+        // Initialize map after DOM loads
+        document.addEventListener('DOMContentLoaded', function () {
+            // Map initialization with custom SVG renderer to preserve all vertices
+            const renderer = L.svg({
+                padding: 1.0,  // padding for edge rendering
+            });
+            map = L.map('map', {
+                renderer: renderer,
+                preferCanvas: false // Force SVG rendering, not canvas (canvas does auto-simplification)
+            }).setView([51.5, 51.5], 7);
+
+            // This is a fixed, finite map (not a real globe) - EPSG3857's default
+            // horizontal wrap would otherwise repeat the whole basemap infinitely
+            // left/right as you pan or zoom out. noWrap on every tile layer below
+            // stops each layer from rendering those repeated copies, and capping
+            // the pan bounds to the map's own pixel extent stops the view from
+            // scrolling into the empty space beyond it in the first place.
+            const worldBounds = L.latLngBounds(
+                map.unproject(L.point(0, 0), config.tileMaxZoom),
+                map.unproject(L.point(WORLD_SIZE, WORLD_SIZE), config.tileMaxZoom)
+            );
+            map.setMaxBounds(worldBounds);
+
+            // Dedicated pane for the "Map Objects" overlay so it always renders
+            // above EITHER base layer, regardless of add/removal order: satellite
+            // tiles live in the default tilePane (z-index 200), but topographic
+            // mode's opaque land/water fill (displayTopographic in map-core.js) is
+            // an SVG vector layer in the default overlayPane (z-index 400) - above
+            // tilePane - which was hiding this tile-based overlay completely
+            // whenever topo mode was active. 450 keeps it above both.
+            map.createPane('vectorTilePane');
+            map.getPane('vectorTilePane').style.zIndex = 450;
+            map.getPane('vectorTilePane').style.pointerEvents = 'none';
+
+            // Satellite tile layer (local DayZ satellite imagery)
+            satTileLayer = L.tileLayer('data/Chernarus/Sat/{z}/{x}/{y}.png', {
+                attribution: 'DayZ Chernarus Satellite',
+                maxZoom: config.tileMaxZoom,
+                maxNativeZoom: 6, // Upscale tiles beyond zoom level 6 instead of showing blanks
+                minZoom: 0,
+                tms: false,
+                noWrap: true,
+                bounds: worldBounds,
+                errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent GIF for missing tiles
+            });
+
+            // Add satellite layer by default
+            satTileLayer.addTo(map);
+
+            // Rasterized "Map Objects" overlay (roads, buildings, trees, etc.), pre-rendered
+            // at build time by tools/tiling/build-tiles.js instead of drawing millions of
+            // live vector features in the browser. See tools/tiling/ for the build pipeline.
+            vectorTileLayer = L.tileLayer('out/tiles/vector/{z}/{x}/{y}.png', {
+                attribution: 'DayZ Chernarus Map Objects',
+                maxZoom: config.tileMaxZoom,
+                maxNativeZoom: 7,
+                minZoom: 0,
+                tms: false,
+                noWrap: true,
+                bounds: worldBounds,
+                pane: 'vectorTilePane',
+                errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+            });
+            vectorTileLayer.addTo(map);
+
+            rasterObjectLayer = L.tileLayer('out/tiles/livonia-raster-local-only/{z}/{x}/{y}.png?v=water-local-only-r6', {
+                attribution: 'Livonia top-down DayZ models', maxZoom: config.tileMaxZoom,
+                maxNativeZoom: 7, minZoom: 0, noWrap: true, bounds: worldBounds,
+                pane: 'vectorTilePane',
+                errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+            });
+
+            const toggleVectorTiles = document.getElementById('toggleVectorTiles');
+            if (toggleVectorTiles) {
+                toggleVectorTiles.addEventListener('change', (e) => {
+                    const objectLayer = activeMapName === 'Livonia' && baseMode === 'sat' ? rasterObjectLayer : vectorTileLayer;
+                    if (e.target.checked) {
+                        if (activeMapName === 'Chernarus' || (activeMapName === 'Livonia' && baseMode === 'sat')) objectLayer.addTo(map);
+                    } else {
+                        if (map.hasLayer(objectLayer)) map.removeLayer(objectLayer);
+                    }
+                });
+            }
+
+            // Base map toggles
+            const baseToggleSat = document.getElementById('baseToggleSat');
+            const baseToggleTopo = document.getElementById('baseToggleTopo');
+
+            const setBaseButtons = (mode) => {
+                if (!baseToggleSat || !baseToggleTopo) return;
+                if (mode === 'sat') {
+                    // Raster and legacy bounding-geometry tiles are mutually
+                    // exclusive. This also cleans up a Chernarus overlay left
+                    // mounted while switching maps/modes.
+                    if (vectorTileLayer && map.hasLayer(vectorTileLayer)) map.removeLayer(vectorTileLayer);
+                    baseToggleSat.classList.add('active');
+                    baseToggleTopo.classList.remove('active');
+                } else {
+                    baseToggleTopo.classList.add('active');
+                    baseToggleSat.classList.remove('active');
+                }
+            };
+
+            const setBaseMode = async (mode) => {
+                const mapCfg = MAPS[activeMapName];
+                if (mode === 'sat' && !mapCfg.hasSat && !mapCfg.hasRasterObjects) mode = 'topo';
+                baseMode = mode;
+                setBaseButtons(mode);
+                if (typeof setStatus === 'function') {
+                    setStatus(`Switching to ${mode === 'sat' ? 'raster' : 'vector'}...`, 'loading');
+                } else {
+                    console.log('[BASE] Switching to', mode);
+                }
+
+                if (mode === 'sat') {
+                    if (topoLayer) {
+                        map.removeLayer(topoLayer);
+                        topoLayer = null;
+                    }
+                    if (mapCfg.hasSat && satTileLayer && !map.hasLayer(satTileLayer)) {
+                        satTileLayer.addTo(map);
+                    }
+                    // Livonia has object raster tiles before it has terrain satellite
+                    // tiles. Keep the computed topo terrain underneath as a preview.
+                    if (!mapCfg.hasSat) {
+                        if (!topoGeojsonByMap[activeMapName]) topoGeojsonByMap[activeMapName] = await loadGeoJSON(mapCfg.contoursFile);
+                        displayTopographic(topoGeojsonByMap[activeMapName], mapCfg.waterElevCutoff, mapCfg.colors);
+                    }
+                    if (activeMapName === 'Livonia' && mapCfg.hasRasterObjects && toggleVectorTiles?.checked && !map.hasLayer(rasterObjectLayer)) rasterObjectLayer.addTo(map);
+                    setStatus(mapCfg.hasSat ? 'Raster mode' : 'Raster objects (topographic terrain preview)', 'normal');
+                    return;
+                }
+
+                if (rasterObjectLayer && map.hasLayer(rasterObjectLayer)) map.removeLayer(rasterObjectLayer);
+
+                if (satTileLayer && map.hasLayer(satTileLayer)) {
+                    map.removeLayer(satTileLayer);
+                }
+
+                try {
+                    console.log('[BASE] Loading topo GeoJSON for', activeMapName);
+                    if (!topoGeojsonByMap[activeMapName]) {
+                        topoGeojsonByMap[activeMapName] = await loadGeoJSON(mapCfg.contoursFile);
+                    }
+                    const geojson = topoGeojsonByMap[activeMapName];
+                    console.log('[BASE] Topo GeoJSON loaded:', geojson?.features?.length || 0);
+                    displayTopographic(geojson, mapCfg.waterElevCutoff, mapCfg.colors);
+                } catch (err) {
+                    console.error('Failed to load topographic mode:', err);
+                    setStatus('Topographic mode not available', 'error');
+                }
+            };
+
+            if (baseToggleSat) {
+                baseToggleSat.addEventListener('click', () => setBaseMode('sat'));
+            }
+            if (baseToggleTopo) {
+                baseToggleTopo.addEventListener('click', () => setBaseMode('topo'));
+            }
+
+            // Map selector: Chernarus/Sakhal/Livonia. Switches config.mapSize (all
+            // downstream pixel math - localToPixel, coordsToLatLng, etc. - reads it
+            // live, no separate recompute needed) and gates Sat/Map Objects controls
+            // to whichever map actually has that data.
+            const setActiveMap = async (mapName) => {
+                const mapCfg = MAPS[mapName];
+                if (!mapCfg) return;
+                activeMapName = mapName;
+                config.mapSize = mapCfg.mapSize;
+
+                document.querySelectorAll('.map-select-btn').forEach((btn) => {
+                    btn.classList.toggle('active', btn.dataset.map === mapName);
+                });
+
+                if (baseToggleSat) baseToggleSat.disabled = !mapCfg.hasSat && !mapCfg.hasRasterObjects;
+                const toggleVectorTilesEl = document.getElementById('toggleVectorTiles');
+                if (toggleVectorTilesEl) toggleVectorTilesEl.disabled = !mapCfg.hasObjects;
+
+                if (satTileLayer && map.hasLayer(satTileLayer)) map.removeLayer(satTileLayer);
+                if (mapCfg.hasSat && mapCfg.satPath) {
+                    satTileLayer = L.tileLayer(mapCfg.satPath, {
+                        attribution: `DayZ ${mapName} Satellite`, maxZoom: config.tileMaxZoom,
+                        maxNativeZoom: mapCfg.satNativeZoom || 6, minZoom: 0, tms: false,
+                        noWrap: true, bounds: worldBounds,
+                        errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+                    });
+                }
+                if (vectorTileLayer && map.hasLayer(vectorTileLayer)) map.removeLayer(vectorTileLayer);
+                if (rasterObjectLayer && map.hasLayer(rasterObjectLayer)) map.removeLayer(rasterObjectLayer);
+                if (topoLayer) { map.removeLayer(topoLayer); topoLayer = null; }
+
+                await setBaseMode((mapCfg.hasSat || mapCfg.hasRasterObjects) ? 'sat' : 'topo');
+                if (mapName === 'Chernarus' && mapCfg.hasObjects && toggleVectorTilesEl?.checked) vectorTileLayer.addTo(map);
+            };
+
+            document.querySelectorAll('.map-select-btn').forEach((btn) => {
+                btn.addEventListener('click', () => setActiveMap(btn.dataset.map));
+            });
+
+            // The current map-rendering work is Livonia-first. Boot directly
+            // into its raster model tiles instead of initially presenting the
+            // older Chernarus bounding-geometry overlay.
+            setActiveMap('Livonia');
+
+            // Zoom-aware stroke scaling: update all layers when zoom changes
+            map.on('zoomend', function () {
+                currentZoomLevel = map.getZoom();
+                if (typeof updateLayerStrokesOnZoom === 'function') {
+                    updateLayerStrokesOnZoom();
+                }
+                if (typeof updateViewportCulling === 'function') {
+                    updateViewportCulling(); // Also cull features outside viewport on zoom
+                }
+            });
+
+            currentZoomLevel = map.getZoom(); // Set initial zoom level
+
+            // Legacy per-category live vector rendering - disabled by default now that
+            // vectorTileLayer covers this; re-enable with ?legacyVectors=1 for A/B rollback.
+            if (legacyVectorsEnabled) {
+                document.getElementById('categoryToggles').style.display = '';
+                setTimeout(() => {
+                    if (typeof initializeCategoryToggles === 'function') {
+                        initializeCategoryToggles();
+                    }
+                    const container = document.getElementById("categoryToggles");
+                    if (container && container.children.length === 0) {
+                        buildCategoryTogglesFallback();
+                    }
+                }, 0);
+            }
+        });
+    </script>
+</body>
+
+</html>

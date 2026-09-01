@@ -1,0 +1,221 @@
+/* DayZ Map Styles */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    width: 100%;
+}
+
+#map {
+    height: 100%;
+    width: 100%;
+    background-color: rgb(0, 36, 70);
+}
+
+.controls {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 12px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 13px;
+    width: 320px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.controls h3 {
+    margin-bottom: 10px;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 8px;
+}
+
+.control-group {
+    margin-bottom: 12px;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+}
+
+.control-group input[type="text"],
+.control-group input[type="range"],
+.control-group input[type="number"],
+.control-group input[type="color"],
+.control-group select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 11px;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.control-group input[type="text"]:focus,
+.control-group input[type="number"]:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.button-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+button {
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+button:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.status {
+    margin-top: 12px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    border-left: 2px solid rgba(76, 175, 80, 0.6);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.status.loading {
+    border-left-color: rgba(255, 193, 7, 0.6);
+}
+
+.status.error {
+    border-left-color: rgba(244, 67, 54, 0.6);
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.checkbox-group label {
+    margin: 0;
+    cursor: pointer;
+    flex: 1;
+}
+
+.divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 10px 0;
+}
+
+/* Dark Mode Styles */
+body.dark-mode #map {
+    background-color: rgb(20, 40, 70);
+}
+
+body.dark-mode .controls {
+    background: rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+}
+
+body.dark-mode .controls h3 {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .control-group label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+body.dark-mode .control-group input[type="text"],
+body.dark-mode .control-group input[type="range"],
+body.dark-mode .control-group input[type="number"],
+body.dark-mode .control-group input[type="color"],
+body.dark-mode .control-group select {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #e0e0e0;
+}
+
+body.dark-mode button {
+    background: #1976D2;
+    border-color: #1565C0;
+}
+
+body.dark-mode button:hover {
+    background: #1565C0;
+    border-color: #1565C0;
+}
+
+body.dark-mode .status {
+    background: rgba(255, 255, 255, 0.03);
+    border-left-color: rgba(25, 118, 210, 0.6);
+}
+
+#dark-mode-toggle {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1000;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 4px;
+    background: #4CAF50;
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-family: inherit;
+}
+
+#dark-mode-toggle:hover {
+    background: #45a049;
+}
+
+body.dark-mode #dark-mode-toggle {
+    background: #1976D2;
+}
+
+body.dark-mode #dark-mode-toggle:hover {
+    background: #1565C0;
+}

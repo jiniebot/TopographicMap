@@ -1,0 +1,1548 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MapLibre Viewer (WebGL)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #14181a;
+        font: 13px/1.4 system-ui, sans-serif;
+        color: #e7e9e6;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+      #panel {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 5;
+        background: rgba(20, 24, 26, 0.9);
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 10px 12px;
+        width: 230px;
+        backdrop-filter: blur(4px);
+      }
+      #panel h1 {
+        font-size: 13px;
+        margin: 0 0 8px;
+        color: #9ad;
+      }
+      #panel label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 4px 0;
+        cursor: pointer;
+      }
+      #panel select,
+      #panel input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        background: #1c2225;
+        border: 1px solid #3a4247;
+        color: #e7e9e6;
+        border-radius: 4px;
+        padding: 4px 6px;
+        margin: 2px 0 8px;
+      }
+      #panel hr {
+        border: none;
+        border-top: 1px solid #333;
+        margin: 8px 0;
+      }
+      #panel .sub {
+        margin-left: 14px;
+      }
+      #panel .hint {
+        color: #8a9298;
+        font-size: 11px;
+        margin-top: 4px;
+      }
+      #styleEditor {
+        position: absolute;
+        top: 90px;
+        right: 10px;
+        z-index: 5;
+        max-height: calc(100vh - 110px);
+        overflow-y: auto;
+        background: rgba(20, 24, 26, 0.9);
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 10px 12px;
+        width: 230px;
+        backdrop-filter: blur(4px);
+      }
+      #styleEditor h1 {
+        font-size: 13px;
+        margin: 0 0 8px;
+        color: #9ad;
+      }
+      #styleEditor label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 4px 0;
+        cursor: pointer;
+      }
+      #styleEditor select,
+      #styleEditor input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        background: #1c2225;
+        border: 1px solid #3a4247;
+        color: #e7e9e6;
+        border-radius: 4px;
+        padding: 4px 6px;
+        margin: 2px 0 8px;
+      }
+      #styleEditor input[type="color"] {
+        width: 100%;
+        height: 28px;
+        padding: 2px;
+        background: #1c2225;
+        border: 1px solid #3a4247;
+        border-radius: 4px;
+      }
+      #styleEditor button {
+        width: 100%;
+        margin: 4px 0;
+        background: #26302f;
+        border: 1px solid #3a4247;
+        color: #e7e9e6;
+        border-radius: 4px;
+        padding: 6px;
+        cursor: pointer;
+      }
+      #styleEditor button:hover {
+        background: #2f3b39;
+      }
+      #styleEditor .value {
+        color: #8a9298;
+        font-size: 11px;
+      }
+      #toggleStyleEditor {
+        position: absolute;
+        top: 54px;
+        right: 10px;
+        z-index: 6;
+        background: rgba(20, 24, 26, 0.9);
+        border: 1px solid #333;
+        color: #e7e9e6;
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font: 12px system-ui, sans-serif;
+      }
+      #coordReadout {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        z-index: 5;
+        background: rgba(20, 24, 26, 0.85);
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+      }
+      #perfReadout {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        z-index: 5;
+        background: rgba(20, 24, 26, 0.85);
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+        color: #8f8;
+      }
+      #zoomReadout {
+        position: absolute;
+        bottom: 40px;
+        left: 10px;
+        z-index: 5;
+        background: rgba(20, 24, 26, 0.85);
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+      }
+      .maplibregl-popup-content {
+        background: #1c2225;
+        color: #e7e9e6;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="panel">
+      <h1>MapLibre Viewer</h1>
+      <select id="mapSelect"></select>
+      <label
+        ><input type="radio" name="mode" value="satellite" checked />
+        Satellite</label
+      >
+      <label
+        ><input type="radio" name="mode" value="topographic" /> Topographic</label
+      >
+      <div class="sub" id="topoLayers">
+        <label
+          ><input type="checkbox" data-layer="terrain" checked /> Terrain
+          (elevation)</label
+        >
+        <label
+          ><input type="checkbox" data-layer="surfaces" checked /> Surfaces
+          (materials)</label
+        >
+        <label
+          ><input type="checkbox" data-layer="water" checked /> Water</label
+        >
+        <label
+          ><input type="checkbox" data-layer="objects" checked /> Objects</label
+        >
+      </div>
+      <hr />
+      <label><input type="checkbox" id="terrain3d" /> 3D relief</label>
+      <label class="sub" id="exaggerateRow" style="display: none">
+        Exaggeration
+        <input
+          type="range"
+          id="exaggeration"
+          min="1"
+          max="4"
+          step="0.25"
+          value="1.5"
+          style="flex: 1"
+        />
+      </label>
+      <label
+        ><input type="checkbox" id="hillshade" /> Hillshade (works in
+        satellite too)</label
+      >
+      <hr />
+      <input
+        id="coordSearch"
+        type="text"
+        placeholder="Jump to X, Z (e.g. 7500, 8200)"
+      />
+      <div class="hint">
+        Click the map to inspect a tile object. With the color editor open,
+        clicking a surface or object instead selects its type in the
+        picker. Right-drag (or ctrl-drag) to tilt/rotate once 3D relief is
+        on.
+      </div>
+    </div>
+    <div id="coordReadout">X: - / Z: -</div>
+    <div id="perfReadout">tiles: -</div>
+    <div id="zoomReadout">Zoom: -</div>
+    <button id="toggleStyleEditor" type="button">Show color editor</button>
+    <section id="styleEditor" hidden>
+      <h1>Topographic color editor</h1>
+      <label>Preset</label
+      ><select id="styleVariant">
+        <option value="dark" selected>Dark mode</option>
+        <option value="light">Light mode</option>
+      </select>
+      <label>Category</label
+      ><select id="styleCategory"></select>
+      <label>Subcategory</label
+      ><select id="styleSubclass"></select>
+      <label>Color</label><input id="styleColor" type="color" />
+      <label>Alpha <span class="value" id="styleAlphaValue">100%</span></label
+      ><input
+        id="styleAlpha"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value="100"
+      />
+      <button id="resetStyle" type="button">Reset selected to default</button>
+      <button id="saveStyle" type="button">Save color profile</button>
+      <div class="hint" id="styleStatus"></div>
+    </section>
+    <script>
+      // Same non-geographic coordinate trick JinieBotInterface's
+      // mapDayZToLeaflet.js uses: DayZ world X/Z isn't real-world geography,
+      // but MapLibre GL is Web-Mercator-only (no planar/affine CRS support),
+      // so we fake it - linearly remap DayZ meters into a synthetic
+      // lng/lat via the standard Mercator formulas at a fixed reference
+      // "zoom" (256px world). It's an invertible bijection, not real
+      // geography, so distances/areas away from the equator would be
+      // distorted if we ever measured real-world units - we never do here,
+      // only round-trip DayZ coordinates through it.
+      const WORLD = 256;
+      function dayzToLngLat(x, z, mapSize) {
+        const px = (x / mapSize) * WORLD,
+          py = WORLD - (z / mapSize) * WORLD;
+        const lng = (px / WORLD) * 360 - 180;
+        const n = Math.PI - (2 * Math.PI * py) / WORLD;
+        const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+        return [lng, lat];
+      }
+      function lngLatToDayz(lng, lat, mapSize) {
+        const px = ((lng + 180) / 360) * WORLD;
+        const latRad = (lat * Math.PI) / 180;
+        const py =
+          (WORLD / 2) *
+          (1 - Math.log(Math.tan(Math.PI / 4 + latRad / 2)) / Math.PI);
+        const x = (px / WORLD) * mapSize,
+          z = ((WORLD - py) / WORLD) * mapSize;
+        return [x, z];
+      }
+
+      let maps = [],
+        active = null,
+        map = null;
+
+      // Same category/subcategory taxonomy and dot-path key scheme as
+      // map-render-app.html's STYLE_GROUPS (surface.en_deforested,
+      // building.house, etc.) - both viewers read/write the same
+      // configs/styles/<mapId>.json file via /api/map-render/styles/:id,
+      // so the keys have to match exactly or edits made in one viewer
+      // wouldn't apply in the other.
+      const STYLE_GROUPS = {
+        surface: {
+          label: "Terrain surfaces",
+          items: {
+            en_deforested: "#c8bd91",
+            en_flowers1: "#b8cd83",
+            en_flowers2: "#aecd79",
+            en_flowers3: "#c5cf86",
+            en_forest_con: "#789263",
+            en_forest_dec: "#91a96e",
+            en_grass1: "#c7d394",
+            en_grass2: "#b8c986",
+            en_soil: "#b29a73",
+            en_stones: "#aaa99b",
+            en_stubble: "#d2c58c",
+            en_tarmac_old: "#aaa8a0",
+            cp_broadleaf_dense1: "#708559",
+            cp_broadleaf_dense2: "#667c50",
+            cp_broadleaf_sparse1: "#8ca36d",
+            cp_broadleaf_sparse2: "#98aa78",
+            cp_concrete1: "#aaa9a1",
+            cp_concrete2: "#96968f",
+            cp_conifer_common1: "#607850",
+            cp_conifer_common2: "#566e48",
+            cp_conifer_moss1: "#718260",
+            cp_conifer_moss2: "#65775a",
+            cp_dirt: "#aa956f",
+            cp_grass: "#b9ca87",
+            cp_grass_tall: "#aabd78",
+            cp_gravel: "#aaa38e",
+            cp_rock: "#8d8d82",
+            sakhal_beach: "#b7ad94",
+            sakhal_concrete: "#999b99",
+            sakhal_forest_birch: "#87947e",
+            sakhal_forest_spruce: "#687765",
+            sakhal_grass_brown: "#a39a77",
+            sakhal_grass_green: "#91a277",
+            sakhal_gravel: "#99978d",
+            sakhal_ice_lake: "#b8d4dc",
+            sakhal_ice_sea: "#a8cbd7",
+            sakhal_snow: "#e4e8e5",
+            sakhal_snow_forest: "#d4ddd7",
+            sakhal_volcanic_red: "#9b7569",
+            sakhal_volcanic_yellow: "#ae9b70",
+            other: "#c2cc9a",
+          },
+        },
+        building: {
+          label: "Buildings",
+          items: {
+            house: "#34383a",
+            apartment: "#3d4143",
+            commercial: "#484b4c",
+            industrial: "#555b60",
+            military: "#4d5550",
+            medical: "#e4ded6",
+            farm: "#62584a",
+            religious: "#504d58",
+            utility: "#555b60",
+            transport: "#4d5154",
+            harbour: "#53585b",
+            ruin: "#69675f",
+            shed_garage: "#555653",
+            tent: "#6b705d",
+            misc: "#34383a",
+          },
+        },
+        barrier: {
+          label: "Fences, walls & gates",
+          items: {
+            fence_wood: "#725c43",
+            fence_metal: "#666b6c",
+            wall_stone: "#77756d",
+            wall_concrete: "#858580",
+            gate: "#5d5f5d",
+            hedge: "#58724c",
+            misc: "#666760",
+          },
+        },
+        vegetation: {
+          label: "Vegetation",
+          items: {
+            tree_deciduous: "#668151",
+            tree_conifer: "#52734d",
+            tree_dead: "#736c59",
+            bush: "#718b58",
+            stump: "#766b55",
+            misc: "#668151",
+          },
+        },
+        transport: {
+          label: "Roads & rail",
+          items: {
+            road_asphalt: "#555957",
+            road_gravel: "#77746c",
+            road_dirt: "#8a765c",
+            road_concrete: "#777a78",
+            road_other: "#5d615f",
+            sidewalk: "#858782",
+            rail_track: "#4c4d4b",
+            bridge: "#626566",
+          },
+        },
+        decal: {
+          label: "Decals & markings",
+          items: {
+            road_marking: "#d5d1bd",
+            runway_marking: "#dad8ce",
+            ground_damage: "#756d61",
+            ground_detail: "#796f5d",
+            graffiti: "#665c62",
+            misc: "#6c665d",
+          },
+        },
+        water: {
+          label: "Water",
+          items: {
+            regular: "#76a9d4",
+            moss: "#6f9f91",
+            ice: "#ffffff",
+            iceberg: "#c9dde2",
+          },
+        },
+        rock: { label: "Rocks", items: { rock: "#777a70" } },
+        wreck: { label: "Wrecks", items: { wreck: "#4b4d4c" } },
+        misc: { label: "Miscellaneous", items: { object: "#34383a" } },
+      };
+      // MapLibre-only categories: things map-render-app.html's editor
+      // doesn't expose (elevation ramp, contour stroke, void/background
+      // color) but are still saved into the same style file under their
+      // own dot-path keys, so map-render-app.html's editor - which merges
+      // {...defaults, ...saved} on load and round-trips whatever it
+      // loaded - just carries them through untouched rather than dropping
+      // them on save.
+      const EXTRA_GROUPS = {
+        terrain: {
+          label: "Terrain elevation & contours",
+          items: {
+            low: "#e9ede3",
+            mid: "#ccd7b9",
+            high: "#b0c48d",
+            outline: "#71694c7a",
+          },
+        },
+        map: {
+          label: "Map defaults",
+          items: { background: "#e2e6d5", hillshadeShadow: "#1a1a1a" },
+        },
+      };
+      const ALL_GROUPS = { ...STYLE_GROUPS, ...EXTRA_GROUPS };
+      const DEFAULT_STYLE_COLORS = {};
+      for (const [group, definition] of Object.entries(STYLE_GROUPS))
+        for (const [sub, color] of Object.entries(definition.items))
+          DEFAULT_STYLE_COLORS[`${group}.${sub}`] = color;
+      // Same auto-darken transform map-render-app.html uses for its dark
+      // preset - halves each channel and adds a small lift, preserving
+      // alpha. Keeps categorical dark defaults derived rather than
+      // hand-picked, so both viewers agree without maintaining two lists.
+      function darkDefault(value) {
+        const hasAlpha = /^#[0-9a-f]{8}$/i.test(value),
+          alpha = hasAlpha ? parseInt(value.slice(7, 9), 16) / 255 : 1,
+          rgb = [1, 3, 5].map((i) =>
+            Math.round(parseInt(value.slice(i, i + 2), 16) * 0.5 + 12),
+          );
+        return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}${Math.round(
+          alpha * 255,
+        )
+          .toString(16)
+          .padStart(2, "0")}`;
+      }
+      // Terrain/map defaults are hand-tuned per variant (not auto-darkened)
+      // - they reproduce the exact hardcoded values this viewer used
+      // before these became editable, so nothing visually changes until
+      // someone actually edits a color.
+      const EXTRA_DEFAULTS = {
+        light: {
+          "terrain.low": "#e9ede3",
+          "terrain.mid": "#ccd7b9",
+          "terrain.high": "#b0c48d",
+          "terrain.outline": "#71694c7a",
+          "map.background": "#e2e6d5",
+          "map.hillshadeShadow": "#1a1a1a",
+        },
+        dark: {
+          "terrain.low": "#303527",
+          "terrain.mid": "#424b32",
+          "terrain.high": "#54623c",
+          "terrain.outline": "#bec8aa61",
+          "map.background": "#171c19",
+          "map.hillshadeShadow": "#1a1a1a",
+        },
+      };
+      const DEFAULT_STYLE_VARIANTS = {
+        light: { ...DEFAULT_STYLE_COLORS, ...EXTRA_DEFAULTS.light },
+        dark: {
+          ...Object.fromEntries(
+            Object.entries(DEFAULT_STYLE_COLORS).map(([key, value]) => [
+              key,
+              darkDefault(value),
+            ]),
+          ),
+          ...EXTRA_DEFAULTS.dark,
+        },
+      };
+      let currentVariant = "dark";
+      let styleVariants = {
+        light: { ...DEFAULT_STYLE_VARIANTS.light },
+        dark: { ...DEFAULT_STYLE_VARIANTS.dark },
+      };
+      let styleColors = styleVariants[currentVariant];
+      // Old flat OBJ_COLORS-style names (still used as local variable names
+      // throughout buildObjectColorExpression below) -> the dot-path keys
+      // actually stored in styleColors/the style file.
+      const OBJ_KEY_MAP = {
+        house: "building.house",
+        apartment: "building.apartment",
+        commercial: "building.commercial",
+        industrial: "building.industrial",
+        military: "building.military",
+        medical: "building.medical",
+        farm: "building.farm",
+        religious: "building.religious",
+        utility: "building.utility",
+        transport_building: "building.transport",
+        harbour: "building.harbour",
+        ruin: "building.ruin",
+        shed_garage: "building.shed_garage",
+        tent: "building.tent",
+        building_misc: "building.misc",
+        fence_wood: "barrier.fence_wood",
+        fence_metal: "barrier.fence_metal",
+        wall_stone: "barrier.wall_stone",
+        wall_concrete: "barrier.wall_concrete",
+        gate: "barrier.gate",
+        hedge: "barrier.hedge",
+        barrier_misc: "barrier.misc",
+        tree_deciduous: "vegetation.tree_deciduous",
+        tree_conifer: "vegetation.tree_conifer",
+        tree_dead: "vegetation.tree_dead",
+        bush: "vegetation.bush",
+        stump: "vegetation.stump",
+        vegetation_misc: "vegetation.misc",
+        road_asphalt: "transport.road_asphalt",
+        road_gravel: "transport.road_gravel",
+        road_dirt: "transport.road_dirt",
+        road_concrete: "transport.road_concrete",
+        road_other: "transport.road_other",
+        sidewalk: "transport.sidewalk",
+        rail_track: "transport.rail_track",
+        bridge: "transport.bridge",
+        road_marking: "decal.road_marking",
+        ground_damage: "decal.ground_damage",
+        ground_detail: "decal.ground_detail",
+        graffiti: "decal.graffiti",
+        water_regular: "water.regular",
+        water_moss: "water.moss",
+        water_ice: "water.ice",
+        water_iceberg: "water.iceberg",
+        rock: "rock.rock",
+        wreck: "wreck.wreck",
+        misc: "misc.object",
+      };
+      function oc(name) {
+        return styleColors[OBJ_KEY_MAP[name]];
+      }
+
+      // MapLibre style expressions have no regex, only substring "in" tests
+      // - close enough to approximate the Leaflet viewer's regex-driven
+      // styleKey() classifier, in the same priority order, without needing
+      // to duplicate that logic server-side or re-render every tile.
+      const modelField = () => [
+        "downcase",
+        ["to-string", ["coalesce", ["get", "model"], ""]],
+      ];
+      const hasAny = (strs) => [
+        "any",
+        ...strs.map((s) => ["in", s, modelField()]),
+      ];
+      const hasAll = (strs) => [
+        "all",
+        ...strs.map((s) => ["in", s, modelField()]),
+      ];
+      const caseExpr = (pairs, fallback) => [
+        "case",
+        ...pairs.flatMap(([cond, value]) => [cond, value]),
+        fallback,
+      ];
+
+      // Three user-editable color stops (terrain.low/mid/high) over the
+      // same 140-320m elevation range the fixed HSL ramp used to cover.
+      // MapLibre interpolates directly in RGB between stops - simpler than
+      // reproducing an HSL curve, and it's what a 3-point color picker
+      // actually implies.
+      function buildTerrainColorExpression() {
+        return [
+          "interpolate",
+          ["linear"],
+          ["coalesce", ["get", "elev"], ["get", "elevation"], 0],
+          140,
+          styleColors["terrain.low"],
+          230,
+          styleColors["terrain.mid"],
+          320,
+          styleColors["terrain.high"],
+        ];
+      }
+
+      function buildObjectColorExpression() {
+        const isWater = ["==", ["get", "isWater"], true];
+        const isRoad = ["==", ["get", "isRoad"], true];
+        const waterColor = caseExpr(
+          [
+            [
+              ["any", hasAny(["ice_lake"]), ["==", ["get", "waterType"], "ice"]],
+              oc('water_ice'),
+            ],
+            [
+              ["any", hasAny(["moss"]), ["==", ["get", "waterType"], "moss"]],
+              oc('water_moss'),
+            ],
+          ],
+          oc('water_regular'),
+        );
+        const roadColor = caseExpr(
+          [
+            [hasAny(["sidewalk", "chodnik", "pavement"]), oc('sidewalk')],
+            [hasAny(["bridge"]), oc('bridge')],
+            [hasAny(["panel", "concrete", "beton"]), oc('road_concrete')],
+            [hasAny(["gravel", "sterk", "grav"]), oc('road_gravel')],
+            [
+              hasAny(["dirt", "mud", "forest", "path", "trail"]),
+              oc('road_dirt'),
+            ],
+            [
+              hasAny(["asf", "asphalt", "tarmac", "highway"]),
+              oc('road_asphalt'),
+            ],
+          ],
+          oc('road_other'),
+        );
+        const barrierColor = caseExpr(
+          [
+            [hasAny(["hedge"]), oc('hedge')],
+            [hasAny(["gate"]), oc('gate')],
+            [
+              hasAny(["wall"]),
+              caseExpr(
+                [[hasAny(["stone", "brick"]), oc('wall_stone')]],
+                oc('wall_concrete'),
+              ),
+            ],
+            [hasAny(["wood", "log"]), oc('fence_wood')],
+            [hasAny(["metal", "wire", "chain"]), oc('fence_metal')],
+          ],
+          oc('barrier_misc'),
+        );
+        const vegetationColor = caseExpr(
+          [
+            [hasAny(["stump"]), oc('stump')],
+            [hasAny(["bush"]), oc('bush')],
+            [hasAny(["dead", "fallen"]), oc('tree_dead')],
+            [
+              hasAny(["picea", "abies", "pinus", "conifer", "spruce"]),
+              oc('tree_conifer'),
+            ],
+            [hasAny(["tree"]), oc('tree_deciduous')],
+          ],
+          oc('vegetation_misc'),
+        );
+        const buildingColor = caseExpr(
+          [
+            [hasAny(["church", "chapel"]), oc('religious')],
+            [hasAny(["military", "barrack", "bunker"]), oc('military')],
+            [
+              hasAny(["hospital", "medical", "clinic", "health"]),
+              oc('medical'),
+            ],
+            [
+              hasAny([
+                "shop",
+                "store",
+                "market",
+                "hotel",
+                "pub",
+                "restaurant",
+                "office",
+                "school",
+              ]),
+              oc('commercial'),
+            ],
+            [
+              hasAny(["apartment", "panelak", "tenement"]),
+              oc('apartment'),
+            ],
+            [
+              hasAny(["harbour", "harbor", "pier", "dock", "lighthouse"]),
+              oc('harbour'),
+            ],
+            [
+              hasAny(["station", "depot", "hangar", "airport", "terminal"]),
+              oc('transport_building'),
+            ],
+            [
+              hasAny([
+                "power",
+                "utility",
+                "transformer",
+                "waterstation",
+                "pump",
+                "antenna",
+                "communication",
+              ]),
+              oc('utility'),
+            ],
+            [
+              hasAny(["industrial", "factory", "warehouse", "workshop", "mine", "quarry"]),
+              oc('industrial'),
+            ],
+            [hasAny(["farm", "barn", "stable", "silo"]), oc('farm')],
+            [hasAny(["ruin", "damaged", "wrecked"]), oc('ruin')],
+            [hasAny(["shed", "garage", "outhouse"]), oc('shed_garage')],
+            [hasAny(["tent"]), oc('tent')],
+            [
+              hasAny(["house", "residential", "cottage", "villa"]),
+              oc('house'),
+            ],
+          ],
+          oc('building_misc'),
+        );
+        return caseExpr(
+          [
+            // Sakhal iceberg chunks live under water_sakhal\ice_sea\... -
+            // that path contains "water" too, so this has to be checked
+            // before the general water test below or every iceberg falls
+            // into the water bucket. build-vector-section.js already
+            // treats these as solid objects, not water, for the same
+            // reason (see isIcebergChunkModel()).
+            [
+              hasAny(["ice_sea_piece", "ice_sea_square", "ice_sea_triangle"]),
+              oc('water_iceberg'),
+            ],
+            [["any", isWater, hasAny(["water", "pond", "river", "lake"])], waterColor],
+            [hasAny(["rail"]), caseExpr([[hasAny(["bridge"]), oc('bridge')]], oc('rail_track'))],
+            [
+              ["any", hasAny(["crosswalk", "zebra"]), ["all", hasAny(["roads"]), hasAny(["decal"])]],
+              oc('road_marking'),
+            ],
+            [hasAny(["graffiti"]), oc('graffiti')],
+            [
+              ["all", hasAny(["crack", "damage", "oil", "blood", "burn", "scorch"]), hasAny(["decal", "ground", "road", "misc"])],
+              oc('ground_damage'),
+            ],
+            [
+              hasAny(["decal", "dirtpatch", "groundpatch", "grounddetail"]),
+              oc('ground_detail'),
+            ],
+            [["any", isRoad, hasAny(["roads"])], roadColor],
+            [hasAny(["wreck"]), oc('wreck')],
+            [["all", hasAny(["rock", "boulder"]), ["!", hasAny(["wall"])]], oc('rock')],
+            [hasAny(["fence", "wall", "gate", "hedge"]), barrierColor],
+            [hasAny(["plant", "tree", "bush", "stump"]), vegetationColor],
+            [
+              hasAny([
+                "structure", "building", "house", "industrial", "shed", "barn",
+                "church", "chapel", "ruin", "military", "apartment", "hospital",
+                "school", "shop", "hotel", "garage", "hangar",
+              ]),
+              buildingColor,
+            ],
+          ],
+          oc('misc'),
+        );
+      }
+
+      const SURFACE_MATCH_KEY = [
+        "coalesce",
+        ["get", "surface"],
+        ["get", "dominantMaterial"],
+        [
+          "case",
+          ["<=", ["to-number", ["coalesce", ["get", "blendWeight"], 0]], 0.5],
+          ["get", "materialA"],
+          ["get", "materialB"],
+        ],
+        "other",
+      ];
+      function buildSurfaceColorExpression() {
+        return [
+          "match",
+          SURFACE_MATCH_KEY,
+          ...Object.keys(STYLE_GROUPS.surface.items)
+            .filter((key) => key !== "other")
+            .flatMap((key) => [key, styleColors[`surface.${key}`]]),
+          styleColors["surface.other"],
+        ];
+      }
+      function buildWaterColorExpression() {
+        return [
+          "match",
+          ["coalesce", ["get", "waterType"], ""],
+          "ice",
+          oc("water_ice"),
+          "moss",
+          oc("water_moss"),
+          oc("water_regular"),
+        ];
+      }
+
+      // Plain-JS mirror of buildObjectColorExpression()'s classification
+      // cascade (same conditions, same priority order) - used to figure
+      // out which category.subclass a clicked object actually resolved to,
+      // so "click to edit" can select the right picker entry instead of
+      // requiring a re-implementation as a MapLibre expression (paint
+      // expressions can't be queried back for "which branch fired").
+      function classifyObject(properties) {
+        const model = String(properties.model || "").toLowerCase();
+        const has = (strs) => strs.some((s) => model.includes(s));
+        const isWater = properties.isWater === true;
+        const isRoad = properties.isRoad === true;
+        const waterKey = () => {
+          if (has(["ice_lake"]) || properties.waterType === "ice")
+            return "water_ice";
+          if (has(["moss"]) || properties.waterType === "moss")
+            return "water_moss";
+          return "water_regular";
+        };
+        const roadKey = () => {
+          if (has(["sidewalk", "chodnik", "pavement"])) return "sidewalk";
+          if (has(["bridge"])) return "bridge";
+          if (has(["panel", "concrete", "beton"])) return "road_concrete";
+          if (has(["gravel", "sterk", "grav"])) return "road_gravel";
+          if (has(["dirt", "mud", "forest", "path", "trail"]))
+            return "road_dirt";
+          if (has(["asf", "asphalt", "tarmac", "highway"]))
+            return "road_asphalt";
+          return "road_other";
+        };
+        const barrierKey = () => {
+          if (has(["hedge"])) return "hedge";
+          if (has(["gate"])) return "gate";
+          if (has(["wall"]))
+            return has(["stone", "brick"]) ? "wall_stone" : "wall_concrete";
+          if (has(["wood", "log"])) return "fence_wood";
+          if (has(["metal", "wire", "chain"])) return "fence_metal";
+          return "barrier_misc";
+        };
+        const vegetationKey = () => {
+          if (has(["stump"])) return "stump";
+          if (has(["bush"])) return "bush";
+          if (has(["dead", "fallen"])) return "tree_dead";
+          if (has(["picea", "abies", "pinus", "conifer", "spruce"]))
+            return "tree_conifer";
+          if (has(["tree"])) return "tree_deciduous";
+          return "vegetation_misc";
+        };
+        const buildingKey = () => {
+          if (has(["church", "chapel"])) return "religious";
+          if (has(["military", "barrack", "bunker"])) return "military";
+          if (has(["hospital", "medical", "clinic", "health"]))
+            return "medical";
+          if (
+            has([
+              "shop", "store", "market", "hotel", "pub", "restaurant",
+              "office", "school",
+            ])
+          )
+            return "commercial";
+          if (has(["apartment", "panelak", "tenement"])) return "apartment";
+          if (has(["harbour", "harbor", "pier", "dock", "lighthouse"]))
+            return "harbour";
+          if (has(["station", "depot", "hangar", "airport", "terminal"]))
+            return "transport_building";
+          if (
+            has([
+              "power", "utility", "transformer", "waterstation", "pump",
+              "antenna", "communication",
+            ])
+          )
+            return "utility";
+          if (
+            has(["industrial", "factory", "warehouse", "workshop", "mine", "quarry"])
+          )
+            return "industrial";
+          if (has(["farm", "barn", "stable", "silo"])) return "farm";
+          if (has(["ruin", "damaged", "wrecked"])) return "ruin";
+          if (has(["shed", "garage", "outhouse"])) return "shed_garage";
+          if (has(["tent"])) return "tent";
+          if (has(["house", "residential", "cottage", "villa"]))
+            return "house";
+          return "building_misc";
+        };
+        if (has(["ice_sea_piece", "ice_sea_square", "ice_sea_triangle"]))
+          return OBJ_KEY_MAP["water_iceberg"];
+        if (isWater || has(["water", "pond", "river", "lake"]))
+          return OBJ_KEY_MAP[waterKey()];
+        if (has(["rail"]))
+          return OBJ_KEY_MAP[has(["bridge"]) ? "bridge" : "rail_track"];
+        if (
+          has(["crosswalk", "zebra"]) ||
+          (has(["roads"]) && has(["decal"]))
+        )
+          return OBJ_KEY_MAP["road_marking"];
+        if (has(["graffiti"])) return OBJ_KEY_MAP["graffiti"];
+        if (
+          has(["crack", "damage", "oil", "blood", "burn", "scorch"]) &&
+          has(["decal", "ground", "road", "misc"])
+        )
+          return OBJ_KEY_MAP["ground_damage"];
+        if (has(["decal", "dirtpatch", "groundpatch", "grounddetail"]))
+          return OBJ_KEY_MAP["ground_detail"];
+        if (isRoad || has(["roads"])) return OBJ_KEY_MAP[roadKey()];
+        if (has(["wreck"])) return OBJ_KEY_MAP["wreck"];
+        if (has(["rock", "boulder"]) && !has(["wall"]))
+          return OBJ_KEY_MAP["rock"];
+        if (has(["fence", "wall", "gate", "hedge"]))
+          return OBJ_KEY_MAP[barrierKey()];
+        if (has(["plant", "tree", "bush", "stump"]))
+          return OBJ_KEY_MAP[vegetationKey()];
+        if (
+          has([
+            "structure", "building", "house", "industrial", "shed", "barn",
+            "church", "chapel", "ruin", "military", "apartment", "hospital",
+            "school", "shop", "hotel", "garage", "hangar",
+          ])
+        )
+          return OBJ_KEY_MAP[buildingKey()];
+        return OBJ_KEY_MAP["misc"];
+      }
+      // Mirrors SURFACE_MATCH_KEY's coalesce order in plain JS.
+      function classifySurface(properties) {
+        const key =
+          properties.surface ||
+          properties.dominantMaterial ||
+          (Number(properties.blendWeight || 0) <= 0.5
+            ? properties.materialA
+            : properties.materialB) ||
+          "other";
+        return `surface.${key in STYLE_GROUPS.surface.items ? key : "other"}`;
+      }
+      // Opens the picker (if closed) and selects the given category.sub so
+      // the color/alpha inputs are already pointed at whatever was clicked.
+      function selectStyleEditorKey(dotKey) {
+        const [group, sub] = dotKey.split(/\.(.+)/);
+        if (!ALL_GROUPS[group]?.items?.[sub]) return false;
+        const editor = document.getElementById("styleEditor");
+        if (editor.hidden) {
+          editor.hidden = false;
+          document.getElementById("toggleStyleEditor").textContent =
+            "Hide color editor";
+        }
+        document.getElementById("styleCategory").value = group;
+        updateStyleSubclasses();
+        document.getElementById("styleSubclass").value = sub;
+        updateStyleColor();
+        document.getElementById("styleStatus").textContent =
+          `Editing ${ALL_GROUPS[group].label} → ${sub.replaceAll("_", " ")}`;
+        return true;
+      }
+
+      function addSources(styleId) {
+        const base = location.origin,
+          mapId = active.id;
+        for (const id of [
+          "sat-src",
+          "terrain-src",
+          "surfaces-src",
+          "water-src",
+          "objects-src",
+          "dem-src",
+        ])
+          if (map.getSource(id)) map.removeSource(id);
+        map.addSource("sat-src", {
+          type: "raster",
+          tiles: [
+            `${base}/api/map-render/final-tile/${mapId}/satellite/{z}/{x}/{y}.png`,
+          ],
+          tileSize: 256,
+          maxzoom: Math.max(
+            4,
+            ...(active.activeFinalCoverage?.satellite || [6]),
+          ),
+        });
+        for (const layer of ["terrain", "surfaces", "water", "objects"])
+          map.addSource(`${layer}-src`, {
+            type: "vector",
+            tiles: [
+              `${base}/api/map-render/final-tile/${mapId}/topographic/${layer}/{z}/{x}/{y}.pbf`,
+            ],
+            minzoom: 0,
+            maxzoom: Math.max(
+              4,
+              ...(active.activeFinalCoverage?.topographic || [6]),
+            ),
+          });
+        // Terrain-RGB DEM tiles, generated once per map (independent of the
+        // versioned final-build output - only depends on the raw elevation
+        // grid) by tools/mapdraw/build-terrain-dem-tiles.js. Feeds both
+        // map.setTerrain() (actual 3D displacement) and the hillshade layer
+        // (2D shaded-relief look, works under satellite too).
+        map.addSource("dem-src", {
+          type: "raster-dem",
+          tiles: [`${base}/out/mapdraw/dem/${mapId}/{z}/{x}/{y}.png`],
+          tileSize: 256,
+          encoding: "mapbox",
+          maxzoom: 6,
+        });
+      }
+
+      function addLayers() {
+        if (!map.getLayer("sat-layer"))
+          map.addLayer({
+            id: "sat-layer",
+            type: "raster",
+            source: "sat-src",
+          });
+        if (!map.getLayer("terrain-layer"))
+          map.addLayer({
+            id: "terrain-layer",
+            type: "fill",
+            source: "terrain-src",
+            "source-layer": "terrain",
+            paint: {
+              "fill-color": buildTerrainColorExpression(),
+              "fill-opacity": 1,
+              "fill-antialias": true,
+            },
+          });
+        if (!map.getLayer("surfaces-layer"))
+          map.addLayer({
+            id: "surfaces-layer",
+            type: "fill",
+            source: "surfaces-src",
+            "source-layer": "surfaces",
+            paint: {
+              "fill-color": buildSurfaceColorExpression(),
+              "fill-opacity": 0.9,
+              "fill-antialias": true,
+            },
+          });
+        if (!map.getLayer("water-layer"))
+          map.addLayer({
+            id: "water-layer",
+            type: "fill",
+            source: "water-src",
+            "source-layer": "water",
+            paint: {
+              "fill-color": buildWaterColorExpression(),
+              "fill-opacity": 0.85,
+              "fill-antialias": true,
+            },
+          });
+        if (!map.getLayer("objects-layer"))
+          map.addLayer({
+            id: "objects-layer",
+            type: "fill",
+            source: "objects-src",
+            "source-layer": "objects",
+            paint: {
+              "fill-color": buildObjectColorExpression(),
+              "fill-opacity": 0.92,
+              "fill-antialias": true,
+            },
+          });
+        // The stroke on every elevation-band polygon is what reads as
+        // contour lines. fill-outline-color can't set a line width, so
+        // this is a companion line layer instead - added last (after
+        // surfaces/water/objects) so contours draw on top of those fills
+        // instead of underneath them, where they were previously getting
+        // fully covered up.
+        if (!map.getLayer("terrain-outline-layer"))
+          map.addLayer({
+            id: "terrain-outline-layer",
+            type: "line",
+            source: "terrain-src",
+            "source-layer": "terrain",
+            paint: {
+              "line-color": styleColors["terrain.outline"],
+              "line-width": 0.65,
+            },
+          });
+        // On top of everything - a hillshade layer only paints shadow/
+        // highlight tones (not a solid fill), so stacking it last lets the
+        // relief shading read over satellite imagery or the topo fill
+        // colors underneath. Starts hidden; toggled by the checkbox.
+        if (!map.getLayer("hillshade-layer"))
+          map.addLayer({
+            id: "hillshade-layer",
+            type: "hillshade",
+            source: "dem-src",
+            layout: { visibility: "none" },
+            paint: {
+              "hillshade-exaggeration": 0.6,
+              "hillshade-shadow-color": styleColors["map.hillshadeShadow"],
+            },
+          });
+      }
+
+      function applyModeVisibility() {
+        const mode = document.querySelector(
+          'input[name="mode"]:checked',
+        ).value;
+        map.setLayoutProperty(
+          "sat-layer",
+          "visibility",
+          mode === "satellite" ? "visible" : "none",
+        );
+        document.getElementById("topoLayers").style.display =
+          mode === "topographic" ? "block" : "none";
+        for (const layer of ["terrain", "surfaces", "water", "objects"]) {
+          const checked = document.querySelector(
+            `#topoLayers input[data-layer="${layer}"]`,
+          ).checked;
+          const visibility =
+            mode === "topographic" && checked ? "visible" : "none";
+          map.setLayoutProperty(`${layer}-layer`, "visibility", visibility);
+          // terrain-outline-layer (contour lines) isn't its own checkbox -
+          // it rides along with the terrain fill toggle, and was
+          // previously never touched here at all, so it stayed visible
+          // even in satellite mode or with terrain unchecked.
+          if (layer === "terrain" && map.getLayer("terrain-outline-layer"))
+            map.setLayoutProperty(
+              "terrain-outline-layer",
+              "visibility",
+              visibility,
+            );
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      }
+
+      async function selectMap(id) {
+        active = maps.find((m) => m.id === id);
+        // Colors are per-map (configs/styles/<mapId>.json) - load before
+        // any layer gets (re)built so the first paint already uses the
+        // right palette instead of defaults-then-flicker.
+        await loadStyleProfile();
+        const center = dayzToLngLat(
+          active.mapSize / 2,
+          active.mapSize / 2,
+          active.mapSize,
+        );
+        if (!map) {
+          map = new maplibregl.Map({
+            container: "map",
+            style: { version: 8, sources: {}, layers: [] },
+            center,
+            zoom: 2,
+            minZoom: 0,
+            maxZoom: 9,
+            renderWorldCopies: false,
+            // MapLibre's WebGL context defaults to antialias:false - fill
+            // polygon edges render aliased/blocky without this, unlike
+            // Leaflet's canvas renderer which anti-aliases automatically.
+            // This is very likely the "pixelated at low zoom" difference,
+            // not the tile data itself (verified the same z/x/y tile is
+            // requested either way). Real cost: more GPU work per frame.
+            antialias: true,
+          });
+          map.addControl(new maplibregl.NavigationControl(), "top-right");
+          map.on("load", () => {
+            addSources();
+            addLayers();
+            applyModeVisibility();
+          });
+          map.on("mousemove", (e) => {
+            const [x, z] = lngLatToDayz(e.lngLat.lng, e.lngLat.lat, active.mapSize);
+            document.getElementById("coordReadout").textContent =
+              `X: ${x.toFixed(0)} / Z: ${z.toFixed(0)}`;
+          });
+          map.on("click", (e) => {
+            // With the color editor open, clicking a feature selects that
+            // feature's category.subclass in the picker instead of
+            // popping up its raw properties - objects take priority over
+            // surfaces since they render on top and are what's visually
+            // under the cursor when both are present.
+            if (!document.getElementById("styleEditor").hidden) {
+              const objectHit = map.queryRenderedFeatures(e.point, {
+                layers: ["objects-layer"].filter((id) => map.getLayer(id)),
+              })[0];
+              if (objectHit) {
+                selectStyleEditorKey(classifyObject(objectHit.properties));
+                return;
+              }
+              const surfaceHit = map.queryRenderedFeatures(e.point, {
+                layers: ["surfaces-layer"].filter((id) => map.getLayer(id)),
+              })[0];
+              if (surfaceHit) {
+                selectStyleEditorKey(classifySurface(surfaceHit.properties));
+                return;
+              }
+              return;
+            }
+            const features = map.queryRenderedFeatures(e.point, {
+              layers: ["objects-layer"].filter((id) => map.getLayer(id)),
+            });
+            if (!features.length) return;
+            const p = features[0].properties;
+            new maplibregl.Popup({ maxWidth: "320px" })
+              .setLngLat(e.lngLat)
+              .setHTML(
+                `<div><strong>${escapeHtml(p.model || "Object")}</strong><br/>` +
+                  Object.entries(p)
+                    .filter(([k]) => k !== "model")
+                    .map(
+                      ([k, v]) =>
+                        `<div><b>${escapeHtml(k)}:</b> ${escapeHtml(v)}</div>`,
+                    )
+                    .join("") +
+                  `</div>`,
+              )
+              .addTo(map);
+          });
+          map.on("render", () => {
+            const src = map.style && map.style.sourceCaches;
+            if (!src) return;
+            let count = 0;
+            for (const key in src) count += src[key]._tiles ? Object.keys(src[key]._tiles).length : 0;
+            document.getElementById("perfReadout").textContent =
+              `tiles loaded: ${count}`;
+          });
+          map.on("zoom", updateZoomReadout);
+        } else {
+          // MapLibre refuses to remove a source while any layer still
+          // references it - addSources() always removes+recreates every
+          // source (there's no API to just change a source's tile URL
+          // template), so the layers built on top of them have to go
+          // first or every map switch after the first throws here and
+          // silently aborts the rest of selectMap().
+          for (const id of [
+            "sat-layer",
+            "terrain-layer",
+            "terrain-outline-layer",
+            "surfaces-layer",
+            "water-layer",
+            "objects-layer",
+            "hillshade-layer",
+          ])
+            if (map.getLayer(id)) map.removeLayer(id);
+          addSources();
+          addLayers();
+          applyModeVisibility();
+          // addLayers() always recreates hillshade-layer hidden - resync it
+          // to whatever the checkbox already says instead of silently
+          // dropping the toggle on every map switch.
+          if (document.getElementById("hillshade").checked)
+            map.setLayoutProperty("hillshade-layer", "visibility", "visible");
+          applyTerrain();
+          map.jumpTo({ center, zoom: 2 });
+        }
+        updateZoomReadout();
+      }
+      function updateZoomReadout() {
+        if (!map) return;
+        const zoom = map.getZoom(),
+          tileZoom = Math.round(zoom),
+          maxNative = active?.web?.maxNativeZoom;
+        const overzoomed =
+          typeof maxNative === "number" && tileZoom > maxNative;
+        document.getElementById("zoomReadout").innerHTML =
+          `Zoom: ${tileZoom} <span style="opacity:.6">(${zoom.toFixed(2)})</span>` +
+          (overzoomed
+            ? ` <span style="color:#e8a33d">overzoomed past z${maxNative}</span>`
+            : "");
+      }
+
+      // Reapplies every paint property + the body background from the
+      // current styleColors, without recreating any layer - used for live
+      // picker edits, save, reset, and light/dark preset switches, where
+      // the layers already exist and only need their colors patched.
+      function restyleAll() {
+        if (!map) return;
+        if (map.getLayer("terrain-layer"))
+          map.setPaintProperty(
+            "terrain-layer",
+            "fill-color",
+            buildTerrainColorExpression(),
+          );
+        if (map.getLayer("terrain-outline-layer"))
+          map.setPaintProperty(
+            "terrain-outline-layer",
+            "line-color",
+            styleColors["terrain.outline"],
+          );
+        if (map.getLayer("surfaces-layer"))
+          map.setPaintProperty(
+            "surfaces-layer",
+            "fill-color",
+            buildSurfaceColorExpression(),
+          );
+        if (map.getLayer("water-layer"))
+          map.setPaintProperty(
+            "water-layer",
+            "fill-color",
+            buildWaterColorExpression(),
+          );
+        if (map.getLayer("objects-layer"))
+          map.setPaintProperty(
+            "objects-layer",
+            "fill-color",
+            buildObjectColorExpression(),
+          );
+        if (map.getLayer("hillshade-layer"))
+          map.setPaintProperty(
+            "hillshade-layer",
+            "hillshade-shadow-color",
+            styleColors["map.hillshadeShadow"],
+          );
+        document.body.style.background = styleColors["map.background"];
+      }
+      async function loadStyleProfile() {
+        const profile = await fetch(`/api/map-render/styles/${active.id}`).then(
+            (r) => r.json(),
+          ),
+          saved = profile.variants || { light: profile.colors || {}, dark: {} };
+        styleVariants = {
+          light: { ...DEFAULT_STYLE_VARIANTS.light, ...(saved.light || {}) },
+          dark: { ...DEFAULT_STYLE_VARIANTS.dark, ...(saved.dark || {}) },
+        };
+        styleColors = styleVariants[currentVariant];
+        refreshStyleEditor();
+        restyleAll();
+      }
+      async function saveStyleProfile() {
+        const saveBtn = document.getElementById("saveStyle");
+        saveBtn.disabled = true;
+        const response = await fetch(`/api/map-render/styles/${active.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ variants: styleVariants }),
+        });
+        const result = await response.json();
+        saveBtn.disabled = false;
+        document.getElementById("styleStatus").textContent = response.ok
+          ? `Saved. Published to ${result.publishedVersions || 0} rendered version(s).`
+          : result.error;
+      }
+      function refreshStyleEditor() {
+        const categorySelect = document.getElementById("styleCategory");
+        categorySelect.innerHTML = Object.entries(ALL_GROUPS)
+          .map(
+            ([key, value]) => `<option value="${key}">${value.label}</option>`,
+          )
+          .join("");
+        updateStyleSubclasses();
+      }
+      // "surface" is the one category whose keys are per-map TerrainX
+      // material names (en_*/cp_*/sakhal_*), not universal buckets like
+      // every other category - so it's the only one worth scoping to the
+      // active map. "other" is always kept since it's the catch-all any
+      // map can hit.
+      function subclassKeysForGroup(group) {
+        const keys = Object.keys(ALL_GROUPS[group].items);
+        if (group !== "surface" || !active?.materials?.length) return keys;
+        const used = new Set(active.materials);
+        return keys.filter((key) => key === "other" || used.has(key));
+      }
+      function updateStyleSubclasses() {
+        const group =
+          document.getElementById("styleCategory").value ||
+          Object.keys(ALL_GROUPS)[0];
+        document.getElementById("styleSubclass").innerHTML =
+          subclassKeysForGroup(group)
+            .map(
+              (key) =>
+                `<option value="${key}">${key.replaceAll("_", " ")}</option>`,
+            )
+            .join("");
+        updateStyleColor();
+      }
+      function colorParts(value) {
+        const color = /^#[0-9a-f]{8}$/i.test(value)
+          ? value
+          : `${value.slice(0, 7)}ff`;
+        return {
+          rgb: color.slice(0, 7),
+          alpha: parseInt(color.slice(7, 9), 16) / 255,
+        };
+      }
+      function editorColor() {
+        const alpha = Math.round(
+          (Number(document.getElementById("styleAlpha").value) / 100) * 255,
+        )
+          .toString(16)
+          .padStart(2, "0");
+        return `${document.getElementById("styleColor").value}${alpha}`;
+      }
+      function styleEditorKey() {
+        return `${document.getElementById("styleCategory").value}.${document.getElementById("styleSubclass").value}`;
+      }
+      function updateStyleColor() {
+        const parts = colorParts(styleColors[styleEditorKey()] || "#34383a");
+        document.getElementById("styleColor").value = parts.rgb;
+        document.getElementById("styleAlpha").value = Math.round(
+          parts.alpha * 100,
+        );
+        document.getElementById("styleAlphaValue").textContent =
+          `${document.getElementById("styleAlpha").value}%`;
+      }
+      function resetSelectedStyle() {
+        const key = styleEditorKey();
+        styleColors[key] = DEFAULT_STYLE_VARIANTS[currentVariant][key];
+        updateStyleColor();
+        restyleAll();
+        document.getElementById("styleStatus").textContent =
+          `Selected ${currentVariant} color reset; click Save to persist`;
+      }
+      function applyEditorColor() {
+        styleColors[styleEditorKey()] = editorColor();
+        document.getElementById("styleAlphaValue").textContent =
+          `${document.getElementById("styleAlpha").value}%`;
+        restyleAll();
+      }
+      document
+        .getElementById("styleCategory")
+        .addEventListener("change", updateStyleSubclasses);
+      document
+        .getElementById("styleSubclass")
+        .addEventListener("change", updateStyleColor);
+      document.getElementById("styleVariant").addEventListener("change", (e) => {
+        currentVariant = e.target.value;
+        styleColors = styleVariants[currentVariant];
+        updateStyleColor();
+        restyleAll();
+        document.getElementById("styleStatus").textContent =
+          `Editing ${currentVariant} topographic colors`;
+      });
+      document
+        .getElementById("styleColor")
+        .addEventListener("input", applyEditorColor);
+      document
+        .getElementById("styleAlpha")
+        .addEventListener("input", applyEditorColor);
+      document
+        .getElementById("resetStyle")
+        .addEventListener("click", resetSelectedStyle);
+      document
+        .getElementById("saveStyle")
+        .addEventListener("click", saveStyleProfile);
+      document
+        .getElementById("toggleStyleEditor")
+        .addEventListener("click", () => {
+          const editor = document.getElementById("styleEditor"),
+            open = editor.hidden;
+          editor.hidden = !open;
+          document.getElementById("toggleStyleEditor").textContent = open
+            ? "Hide color editor"
+            : "Show color editor";
+        });
+
+      document.querySelectorAll('input[name="mode"]').forEach((el) =>
+        el.addEventListener("change", applyModeVisibility),
+      );
+      document
+        .querySelectorAll('#topoLayers input[type="checkbox"]')
+        .forEach((el) => el.addEventListener("change", applyModeVisibility));
+      document.getElementById("mapSelect").addEventListener("change", (e) =>
+        selectMap(e.target.value),
+      );
+      document
+        .getElementById("coordSearch")
+        .addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          const m = e.target.value.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+          if (!m || !active) return;
+          const [, x, z] = m;
+          map.flyTo({
+            center: dayzToLngLat(Number(x), Number(z), active.mapSize),
+            zoom: 6,
+          });
+        });
+
+      function applyTerrain() {
+        const on = document.getElementById("terrain3d").checked;
+        document.getElementById("exaggerateRow").style.display = on
+          ? "flex"
+          : "none";
+        if (!map || !map.getSource("dem-src")) return;
+        if (on) {
+          map.setTerrain({
+            source: "dem-src",
+            exaggeration: Number(
+              document.getElementById("exaggeration").value,
+            ),
+          });
+          // Terrain displacement needs real headroom to read as relief -
+          // a top-down 2D pitch makes 3D geometry invisible.
+          if (map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 600 });
+        } else {
+          map.setTerrain(null);
+        }
+      }
+      document
+        .getElementById("terrain3d")
+        .addEventListener("change", applyTerrain);
+      document
+        .getElementById("exaggeration")
+        .addEventListener("input", applyTerrain);
+      document.getElementById("hillshade").addEventListener("change", (e) => {
+        if (!map || !map.getLayer("hillshade-layer")) return;
+        map.setLayoutProperty(
+          "hillshade-layer",
+          "visibility",
+          e.target.checked ? "visible" : "none",
+        );
+      });
+
+      (async function init() {
+        maps = (await fetch("/api/map-render/maps").then((r) => r.json())).maps;
+        const select = document.getElementById("mapSelect");
+        select.innerHTML = maps
+          .map((m) => `<option value="${m.id}">${escapeHtml(m.displayName)}</option>`)
+          .join("");
+        if (maps.length) selectMap(maps[0].id);
+      })();
+    </script>
+  </body>
+</html>

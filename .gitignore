@@ -1,0 +1,54 @@
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+node_modules/
+__pycache__/
+*.py[cod]
+*.zip
+*.log
+*.log.err
+*.RPT
+*.ADM
+*.mdmp
+*.DayZProfile
+*.dayz_preset_User.xml
+*.core.xml
+*.ch
+worker-logs/
+logs/
+ebo/runtime-export/profile/
+# All renderer output is reproducible and can be multiple gigabytes.
+out/
+old/out-diagnostics/
+deploy/local-stage/
+# DayZ game data must come from the local P: work drive, never Git.
+data/
+*.pbo
+*.ebo
+*.wrp
+*.pew
+*.p3d
+*.paa
+*.pac
+*.edds
+*.rvmat
+*.bikey
+*.bisign
+*.dta
+*.bin
+*.rap
+*.sqm
+*.lip
+*.wss
+*.dds
+*.tga
+ebo/samples/
+ebo/runtime-export/profile/
+
+# These are local third-party repository checkouts. Distribute dependencies
+# by URL/submodule instead of accidentally embedding their Git histories.
+vendor/

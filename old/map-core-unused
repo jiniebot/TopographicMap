@@ -1,0 +1,320 @@
+// =============================================================================
+// UNUSED FUNCTIONS FROM map-core.js
+// These functions were moved here as they are not currently used in the
+// active codebase. They may be useful for reference or future features.
+// =============================================================================
+
+// Initialize export buttons in UI
+function initializeExportButtons() {
+  const container = document.getElementById("exportControls");
+  if (!container) {
+    console.warn("No exportControls element found in HTML");
+    return;
+  }
+  container.innerHTML = "";
+
+  const geojsonBtn = document.createElement("button");
+  geojsonBtn.textContent = "Export as GeoJSON";
+  geojsonBtn.style.marginRight = "8px";
+  geojsonBtn.onclick = exportGeometriesAsGeoJSON;
+  container.appendChild(geojsonBtn);
+
+  const svgBtn = document.createElement("button");
+  svgBtn.textContent = "Export as SVG";
+  svgBtn.onclick = exportRoadsAsSVG;
+  container.appendChild(svgBtn);
+}
+
+// Contour utilities
+function clearContours() {
+  if (contourLayer) {
+    map.removeLayer(contourLayer);
+    contourLayer = null;
+  }
+  setStatus("Contours cleared.");
+}
+
+// Remove small features from polygon coordinates
+// Removes features smaller than minDistance (in degrees) to create cleaner, simpler geometry
+// Preserves: right angles (intersections, corners) and important features
+// Only removes small bumps/notches that don't create meaningful angles
+function removeSmallFeatures(coords, minDistance = 0.00004) {
+  if (coords.length < 5) return coords; // Need at least 4 unique points + closing point
+
+  const filtered = [];
+  const n = coords.length - 1; // Last point is duplicate of first
+
+  for (let i = 0; i < n; i++) {
+    const prev = coords[(i - 1 + n) % n];
+    const curr = coords[i];
+    const next = coords[(i + 1) % n];
+
+    // Calculate vectors
+    const v1x = curr[0] - prev[0];
+    const v1y = curr[1] - prev[1];
+    const v2x = next[0] - curr[0];
+    const v2y = next[1] - curr[1];
+
+    // Calculate angle between segments using dot product
+    const dotProduct = v1x * v2x + v1y * v2y;
+    const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+    const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+
+    let angle = 0;
+    if (mag1 > 0 && mag2 > 0) {
+      const cosAngle = dotProduct / (mag1 * mag2);
+      angle = Math.acos(Math.max(-1, Math.min(1, cosAngle))); // Clamp to [-1, 1]
+      angle = (angle * 180) / Math.PI; // Convert to degrees
+    }
+
+    // Calculate distance from current point to line between prev and next
+    const distanceToLine = pointToLineDistance(curr, prev, next);
+
+    // Calculate segment lengths
+    const segLen1 = Math.hypot(curr[0] - prev[0], curr[1] - prev[1]);
+    const segLen2 = Math.hypot(next[0] - curr[0], next[1] - curr[1]);
+
+    // Keep point if ANY of these conditions are true:
+    // 1. It forms a right angle (75-105 degrees) - preserves intersections/corners
+    // 2. It deviates significantly from the prev-next line (> minDistance)
+    // 3. Both adjacent segments are reasonably long (> minDistance * 2)
+    const isRightAngle = angle > 75 && angle < 105;
+    const deviatesSignificantly = distanceToLine > minDistance;
+    const hasLongSegments =
+      segLen1 > minDistance * 2 && segLen2 > minDistance * 2;
+
+    if (isRightAngle || deviatesSignificantly || hasLongSegments) {
+      filtered.push(curr);
+    }
+  }
+
+  // Ensure we have at least 4 points
+  if (filtered.length < 4) {
+    return coords; // Couldn't remove enough, return original
+  }
+
+  // Close the ring
+  filtered.push(filtered[0]);
+  return filtered;
+}
+
+// Helper: Apply corner order from debug settings
+function applyCornerOrder(x, z, halfX, halfZ) {
+  if (typeof roadDebug === "undefined" || !roadDebug.enabled) {
+    // Default: Top-Left to Bottom-Right
+    return {
+      startX: x - halfX,
+      startZ: z - halfZ,
+      endX: x + halfX,
+      endZ: z + halfZ,
+    };
+  }
+
+  const order = roadDebug.cornerOrder;
+
+  switch (order) {
+    case "tl-br": // Top-Left to Bottom-Right
+      return {
+        startX: x - halfX,
+        startZ: z - halfZ,
+        endX: x + halfX,
+        endZ: z + halfZ,
+      };
+    case "tr-bl": // Top-Right to Bottom-Left
+      return {
+        startX: x + halfX,
+        startZ: z - halfZ,
+        endX: x - halfX,
+        endZ: z + halfZ,
+      };
+    case "bl-tr": // Bottom-Left to Top-Right
+      return {
+        startX: x - halfX,
+        startZ: z + halfZ,
+        endX: x + halfX,
+        endZ: z - halfZ,
+      };
+    case "br-tl": // Bottom-Right to Top-Left
+      return {
+        startX: x + halfX,
+        startZ: z + halfZ,
+        endX: x - halfX,
+        endZ: z - halfZ,
+      };
+    default:
+      return {
+        startX: x - halfX,
+        startZ: z - halfZ,
+        endX: x + halfX,
+        endZ: z + halfZ,
+      };
+  }
+}
+
+function applyUnionForRoadPrefixes(
+  layer,
+  catConfig,
+  prefixes = [],
+  bufferDist = 0.75
+) {
+  const matched = [];
+  layer.eachLayer((poly) => {
+    if (!poly._objectName) return;
+    if (prefixes.some((p) => poly._objectName.startsWith(p))) {
+      matched.push(poly);
+    }
+  });
+
+  if (matched.length < 2) {
+    console.log(
+      "[ROAD UNION] Skipping - need at least 2 polygons, found",
+      matched.length
+    );
+    return;
+  }
+
+  const turfPolys = matched
+    .map((poly) => {
+      const coords = poly._rotatedCorners || [];
+      if (!coords || coords.length < 3) return null;
+      const expandedRing =
+        bufferDist > 0 ? expandRing(coords, bufferDist) : coords;
+      const ring = [...expandedRing, expandedRing[0]];
+      return turf.polygon([ring]);
+    })
+    .filter(Boolean);
+
+  if (turfPolys.length < 2) {
+    console.log("[ROAD UNION] Skipping - valid turf polys", turfPolys.length);
+    return;
+  }
+
+  console.log(
+    "[ROAD UNION] Union start",
+    turfPolys.length,
+    "polys for prefixes",
+    prefixes.join(",")
+  );
+
+  let merged = turfPolys[0];
+  for (let i = 1; i < turfPolys.length; i++) {
+    try {
+      merged = turf.union(merged, turfPolys[i]);
+    } catch (e) {
+      console.warn("Union failed for road piece", e);
+    }
+  }
+
+  if (!merged || !merged.geometry) return;
+
+  console.log("[ROAD UNION] Union result type:", merged.geometry?.type);
+
+  // Remove originals
+  matched.forEach((p) => layer.removeLayer(p));
+
+  // for asphalt roads, short segment threshold should be higher
+
+  let shortSegmentThreshold = 2.0;
+  if (catConfig.file === "asf_roads_local_coords.csv") {
+    shortSegmentThreshold = 3.0;
+  }
+  if (catConfig.file === "city_roads_local_coords.csv") {
+    shortSegmentThreshold = 4.0;
+  }
+
+  const addGeo = (rings) => {
+    const cleaned = cleanupShortSegments(rings, shortSegmentThreshold).map(
+      (r) => smoothRing(r, 2)
+    );
+    const leafletPoly = createLeafletPolygonFromLocal(cleaned, catConfig);
+    layer.addLayer(leafletPoly);
+  };
+
+  if (merged.geometry.type === "Polygon") {
+    const rings = merged.geometry.coordinates;
+    if (rings && rings.length > 0) {
+      addGeo(rings.map((r) => r.map(([x, z]) => [x, z])));
+    }
+  } else if (merged.geometry.type === "MultiPolygon") {
+    merged.geometry.coordinates.forEach((polyCoords) => {
+      if (polyCoords && polyCoords[0]) {
+        addGeo(polyCoords.map((r) => r.map(([x, z]) => [x, z])));
+      }
+    });
+  } else {
+    console.warn(
+      "[ROAD UNION] Unexpected geometry type:",
+      merged.geometry.type
+    );
+  }
+}
+
+// Non-blocking boolean union that yields to the browser periodically
+// Allows the page to remain responsive during heavy computation
+// DEPRECATED: Use applyBooleanUnionRendering instead
+function applyBooleanUnionRenderingAsync(layer, catConfig) {
+  const polygons = [];
+
+  // Collect all polygon coordinates from the layer
+  layer.eachLayer((polygon) => {
+    if (polygon.getLatLngs && polygon.getLatLngs()[0]) {
+      const coords = polygon.getLatLngs()[0];
+      polygons.push(coords.map((ll) => [ll.lng, ll.lat]));
+    }
+  });
+
+  if (polygons.length < 2) return;
+
+  // Combine all polygons using turf union (non-blocking)
+  let combined = null;
+  let progress = 0;
+
+  (async () => {
+    for (let i = 0; i < polygons.length; i += 50) {
+      const chunk = polygons.slice(i, i + 50);
+      let chunkResult = null;
+
+      for (const poly of chunk) {
+        if (!chunkResult) {
+          chunkResult = turf.polygon([poly]);
+        } else {
+          try {
+            chunkResult = turf.union(chunkResult, turf.polygon([poly]));
+          } catch (err) {
+            console.warn("Union failed for chunk:", err);
+          }
+        }
+      }
+
+      if (chunkResult) {
+        combined = !combined ? chunkResult : turf.union(combined, chunkResult);
+      }
+
+      progress = i / polygons.length;
+      setStatus(
+        `Merging ${catConfig.label}... ${Math.round(progress * 100)}%`,
+        "loading"
+      );
+
+      // Yield to browser
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    // Redraw layer with combined geometry
+    layer.clearLayers();
+
+    if (combined && combined.geometry.type === "Polygon") {
+      const coords = combined.geometry.coordinates[0];
+      const latlngs = coords.map((c) => L.latLng(c[1], c[0]));
+      const poly = L.polygon(latlngs, {
+        color: catConfig.strokeColor,
+        weight: catConfig.strokeWeight,
+        fillColor: catConfig.fillColor,
+        fillOpacity: catConfig.fillOpacity,
+      });
+      layer.addLayer(poly);
+    }
+
+    setStatus(`Finished merging ${catConfig.label}`);
+  })();
+}

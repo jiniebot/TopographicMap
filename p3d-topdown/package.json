@@ -1,0 +1,16 @@
+{
+  "name": "dayz-p3d-topdown",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Extract a top-down GeoJSON silhouette and optional PNG from one DayZ P3D model.",
+  "type": "commonjs",
+  "engines": { "node": ">=20" },
+  "bin": { "p3d-topdown": "p3d-topdown.js" },
+  "scripts": {
+    "check": "node --check p3d-topdown.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.8",
+    "d3-contour": "^4.0.2"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "chernarus",
+  "displayName": "Chernarus",
+  "world": "chernarusplus",
+  "mapSize": 15360,
+  "coordinateSystem": { "origin": "southwest", "xAxis": "east", "zAxis": "north" },
+  "water": { "source": "terrain-elevation", "belowElevation": 0 },
+  "wrp": "P:\\DZ\\worlds\\chernarusplus\\world\\chernarusplus.wrp",
+  "assetRoot": "P:\\",
+  "transformIndex": "../../out/mapdraw/index/chernarusplus",
+  "elevation": {
+    "file": "P:\\map-render-data\\chernarus\\chernarus_elevation.bin",
+    "width": 1537,
+    "height": 1537
+  },
+  "satellite": {
+    "type": "compiled-layers",
+    "layerDirectory": "P:\\DZ\\worlds\\chernarusplus\\data\\layers",
+    "surfaceDirectory": "P:\\DZ\\surfaces\\data\\terrain",
+    "layerGrid": 43,
+    "layerRowOrigin": "northwest",
+    "transparentNoDataColors": true,
+    "useWrpMaterialUv": true,
+    "materialGridWidth": 128,
+    "materialGridHeight": 256,
+    "directTileWorldSize": 480,
+    "directNorthRows": 32,
+    "directFlipLocalY": true,
+    "sourceTilePixels": 512,
+    "sourceBorderPixels": 16,
+    "detailWorldSize": 4,
+    "materials": [
+      "cp_broadleaf_dense1", "cp_broadleaf_dense2", "cp_broadleaf_sparse1",
+      "cp_broadleaf_sparse2", "cp_concrete1", "cp_concrete2",
+      "cp_conifer_common1", "cp_conifer_common2", "cp_conifer_moss1",
+      "cp_conifer_moss2", "cp_dirt", "cp_grass", "cp_grass_tall",
+      "cp_gravel", "cp_rock"
+    ]
+  },
+  "output": "../../out/mapdraw/builds/chernarus",
+  "web": {
+    "baseTiles": "/data/Chernarus/Sat/{z}/{x}/{y}.png",
+    "maxNativeZoom": 6
+  },
+  "preview": {
+    "x": 7680,
+    "z": 7680,
+    "meters": 1000,
+    "zoom": 8,
+    "detailStrength": 0.5
+  }
+}

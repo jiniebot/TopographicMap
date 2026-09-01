@@ -1,0 +1,2130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DayZ Map Renderer</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // leaflet.vectorgrid@1.3.0's canvas tile renderer calls
+      // L.DomEvent.fakeStop, an internal API present when it was published
+      // but removed from newer Leaflet releases (we're on 1.9.4). Without
+      // this, every click on an interactive vector-tile feature (surfaces,
+      // objects, ...) throws inside Leaflet.Renderer.Canvas.Tile's _onClick
+      // before any of our own click handlers ever run. Our app already
+      // tracks "was this click already handled by a feature" itself via
+      // event.originalEvent._objectVectorHandled, so fakeStop only needs to
+      // not throw - it doesn't need to replicate old Leaflet's internal
+      // stop-without-stopping-propagation semantics.
+      if (L && L.DomEvent && !L.DomEvent.fakeStop) {
+        L.DomEvent.fakeStop = function (e) {
+          e._simulated = true;
+          return this;
+        };
+      }
+    </script>
+    <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: #15191f;
+        --line: #303741;
+        --accent: #68b5ff;
+        --muted: #9aa6b2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.45 system-ui,
+          sans-serif;
+        background: #0d1014;
+        color: #edf2f7;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #app {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 410px;
+        height: 100vh;
+      }
+      #map {
+        background: #202830;
+        min-width: 0;
+      }
+      #zoomReadout {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        z-index: 900;
+        background: rgba(20, 24, 26, 0.85);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-variant-numeric: tabular-nums;
+        color: #edf2f7;
+        pointer-events: none;
+      }
+      aside {
+        background: var(--panel);
+        border-left: 1px solid var(--line);
+        padding: 18px;
+        overflow: auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      .sub {
+        color: var(--muted);
+        margin-bottom: 18px;
+      }
+      label {
+        display: block;
+        color: #c8d1db;
+        margin: 15px 0 6px;
+      }
+      select,
+      input,
+      button {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #0e1217;
+        color: #fff;
+        padding: 10px;
+        font-size: 15px;
+      }
+      input[type="range"] {
+        padding: 0;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .style-editor {
+        position: fixed;
+        z-index: 1100;
+        right: 428px;
+        top: 18px;
+        width: 340px;
+        max-height: calc(100vh - 36px);
+        overflow: auto;
+        padding: 16px;
+        background: rgba(21, 25, 31, 0.98);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        box-shadow: 0 12px 35px #0009;
+      }
+      .style-editor[hidden] {
+        display: none;
+      }
+      .style-editor h2 {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      .style-editor label {
+        margin-top: 9px;
+      }
+      input[type="color"] {
+        padding: 4px;
+        cursor: pointer;
+      }
+      .value {
+        float: right;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      .final-panel {
+        position: fixed;
+        z-index: 1100;
+        right: 428px;
+        bottom: 18px;
+        width: 380px;
+        max-height: calc(100vh - 36px);
+        overflow: auto;
+        padding: 16px;
+        background: rgba(21, 25, 31, 0.98);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        box-shadow: 0 12px 35px #0009;
+      }
+      .final-panel[hidden] {
+        display: none;
+      }
+      .check-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .check-grid label {
+        margin: 5px 0;
+      }
+      .check-grid input {
+        width: auto;
+        min-height: 0;
+        margin-right: 7px;
+      }
+      .progress-row {
+        margin-top: 11px;
+      }
+      .progress-row span {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .progress-track {
+        height: 10px;
+        background: #090c10;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.2s;
+      }
+      .pool-worker-table {
+        width: 100%;
+        margin-top: 10px;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .pool-worker-table th,
+      .pool-worker-table td {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pool-worker-table th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .current-work {
+        margin-top: 12px;
+        padding: 10px;
+        border: 1px solid #405064;
+        border-radius: 7px;
+        background: #0d131a;
+      }
+      .current-work strong {
+        display: block;
+        color: #fff;
+      }
+      .current-work .where,
+      .current-work .detail {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 3px;
+      }
+      .current-work .detail {
+        color: #cbd8e5;
+        overflow-wrap: anywhere;
+      }
+      button {
+        background: #2475b9;
+        border-color: #338bd1;
+        font-weight: 650;
+        cursor: pointer;
+        margin-top: 16px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      #status {
+        margin-top: 14px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--muted);
+      }
+      pre {
+        max-height: 180px;
+        overflow: auto;
+        white-space: pre-wrap;
+        font-size: 11px;
+        background: #090c10;
+        padding: 8px;
+        border-radius: 5px;
+      }
+      #results {
+        position: fixed;
+        left: 18px;
+        right: 428px;
+        bottom: 18px;
+        z-index: 1000;
+        background: rgba(12, 15, 19, 0.95);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 10px;
+        display: none;
+        box-shadow: 0 12px 35px #000a;
+      }
+      .result-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        max-height: 260px;
+        object-fit: contain;
+        background: #07090c;
+        cursor: zoom-in;
+      }
+      .full-link {
+        display: block;
+        margin-top: 5px;
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 12px;
+      }
+      .full-link:hover {
+        text-decoration: underline;
+      }
+      .close {
+        position: absolute;
+        right: 8px;
+        top: 3px;
+        width: auto;
+        margin: 0;
+        background: transparent;
+        border: 0;
+        font-size: 20px;
+      }
+      @media (max-width: 900px) {
+        #app {
+          grid-template-columns: 1fr;
+        }
+        aside {
+          position: absolute;
+          right: 8px;
+          top: 8px;
+          width: min(390px, calc(100vw - 16px));
+          z-index: 900;
+          max-height: 75vh;
+          border: 1px solid var(--line);
+        }
+        .style-editor,
+        .final-panel {
+          right: 8px;
+          top: 84px;
+          bottom: auto;
+          width: min(390px, calc(100vw - 16px));
+          max-height: calc(100vh - 100px);
+        }
+        #results {
+          right: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="map"></div>
+      <div id="zoomReadout">Zoom: -</div>
+      <aside>
+        <h1>DayZ Map Renderer</h1>
+        <div class="sub">
+          Select an area, tune it, preview it, then approve a full build.
+        </div>
+        <label>Map</label
+        ><select id="mapSelect"></select>
+        <label>View mode</label
+        ><select id="viewMode">
+          <option value="satellite">Satellite raster</option>
+          <option value="topographic">Topographic vector (preview)</option>
+        </select>
+        <label>Preview center</label>
+        <div class="pair">
+          <input id="x" type="number" step="1" /><input
+            id="z"
+            type="number"
+            step="1"
+          />
+        </div>
+        <label>Area <span class="value" id="metersValue"></span></label
+        ><input id="meters" type="range" min="100" max="2000" step="100" />
+        <label>Resolution <span class="value" id="zoomValue"></span></label
+        ><input id="zoom" type="range" min="6" max="8" step="1" />
+        <label
+          >Surface detail <span class="value" id="detailValue"></span></label
+        ><input id="detail" type="range" min="0" max="0.5" step="0.01" />
+        <button id="toggleStyleEditor" type="button" style="display: none">
+          Show topographic color editor
+        </button>
+        <div id="topoLayerControls" class="check-grid" hidden>
+          <label><input id="showTopoTerrain" type="checkbox" checked />Contours</label>
+          <label><input id="showTopoSurfaces" type="checkbox" checked />Surfaces</label>
+          <label><input id="showTopoWater" type="checkbox" checked />Water</label>
+          <label><input id="showTopoObjects" type="checkbox" checked />Objects / roads</label>
+          <label><input id="inspectTopoSurfaces" type="checkbox" />Inspect surfaces on click</label>
+        </div>
+        <button id="toggleFinalPanel" type="button">
+          Show final render panel
+        </button>
+        <button id="toggleRenderPoolPanel" type="button">
+          Show render pool status
+        </button>
+        <div id="pixelInfo" class="sub"></div>
+        <button id="preview">Render preview</button>
+        <div id="status">Ready. Click the map to choose a center.</div>
+        <pre id="log" hidden></pre>
+      </aside>
+    </div>
+    <section id="styleEditor" class="style-editor" hidden>
+      <h2>Topographic color editor</h2>
+      <label>Color variant</label
+      ><select id="styleVariant">
+        <option value="light">Light mode</option>
+        <option value="dark">Dark mode</option>
+      </select>
+      <label>Category</label
+      ><select id="styleCategory"></select>
+      <label>Subcategory</label
+      ><select id="styleSubclass"></select>
+      <label>Color</label><input id="styleColor" type="color" />
+      <label>Alpha <span class="value" id="styleAlphaValue">100%</span></label
+      ><input
+        id="styleAlpha"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value="100"
+      />
+      <button id="resetStyle" type="button">Reset selected to default</button>
+      <button id="saveStyle" type="button">Save color profile</button>
+      <button id="closeStyleEditor" type="button">Hide editor</button>
+    </section>
+    <section id="finalPanel" class="final-panel" hidden>
+      <h2>Final tile render</h2>
+      <label>Map</label
+      ><select id="finalMap">
+        <option value="all">All maps</option>
+      </select>
+      <label>Zoom level</label
+      ><select id="finalZoom">
+        <option value="all">All levels (0–8)</option>
+      </select>
+      <label>Topographic regeneration</label
+      ><select id="finalLayer">
+        <option value="all">All layers</option>
+        <option value="terrain">Contours only</option>
+        <option value="surfaces">Terrain surfaces only</option>
+        <option value="water">Water only</option>
+        <option value="objects">Objects and roads only</option>
+      </select>
+      <label
+        ><input id="finalMissingOnly" type="checkbox" />Missing tiles
+        only<br /><small
+          >Only queues tiles whose output file is actually absent, instead
+          of redoing the whole zoom level. With "All layers" above, this
+          auto-detects which topographic layers are missing per map across
+          the selected zoom(s) - one click repairs everything with a
+          gap.</small
+        ></label
+      >
+      <label>Modes</label>
+      <div class="check-grid">
+        <label
+          ><input id="finalSatellite" type="checkbox" checked />Satellite</label
+        >
+        <label
+          ><input id="finalTopographic" type="checkbox" checked />Topographic
+          vectors</label
+        >
+      </div>
+      <label>Tile-set version</label
+      ><input id="finalVersion" value="v1" maxlength="64" />
+      <label
+        >Concurrent renderers
+        <span class="value" id="finalWorkersValue">4</span></label
+      ><input
+        id="finalWorkers"
+        type="range"
+        min="1"
+        max="12"
+        step="1"
+        value="4"
+      />
+      <div id="finalProgress"></div>
+      <label
+        ><input id="viewProductionOutput" type="checkbox" />View production
+        output (shows tiles from a running build at any zoom, for whichever
+        map/mode you have selected; falls back to the normal map wherever a
+        tile hasn't been generated yet)</label
+      >
+      <button id="startFinalBuild" type="button">
+        Render and activate version
+      </button>
+      <button id="repairMissingTiles" type="button">
+        Repair missing tiles
+      </button>
+      <p class="hint">
+        "Repair missing tiles" only ever writes tiles that are actually
+        absent on disk (verified per-file, not just via job bookkeeping) for
+        the map(s)/zoom(s) selected above - it never touches satellite
+        tiles, never deletes anything, and never switches which tile-set
+        version is active. Safe to run against a version already serving
+        production traffic.
+      </p>
+      <button id="cancelFinalBuild" type="button" hidden>Cancel safely</button>
+      <button id="retryFinalBuild" type="button" hidden>
+        Retry failed / resume
+      </button>
+      <button id="refreshFinalJobs" type="button">View latest job</button>
+      <button id="dismissFinalJob" type="button" hidden>Clear job from history</button>
+      <button id="clearGeneratedTiles" type="button">Clear selected generated tiles</button>
+      <button id="closeFinalPanel" type="button">Hide panel</button>
+    </section>
+    <section id="renderPoolPanel" class="final-panel" hidden>
+      <h2>Render pool status</h2>
+      <div id="renderPoolMaps"></div>
+      <div id="renderPoolWorkers"></div>
+      <h2 style="margin-top: 18px">Add a worker machine</h2>
+      <div class="sub">
+        On the new machine: download the package below, run
+        <code>npm install</code>, then
+        <code>node tools/launch-workers.js --coordinator http://&lt;this-machine-ip&gt;:8080 --count 8</code>.
+      </div>
+      <div id="workerPackageStatus" class="sub" style="margin-top: 8px"></div>
+      <button id="buildWorkerPackage" type="button">Build worker package</button>
+      <a id="downloadWorkerPackage" href="/api/render-pool/package/download" download hidden
+        ><button type="button">Download worker package</button></a
+      >
+      <button id="closeRenderPoolPanel" type="button">Hide panel</button>
+    </section>
+    <section id="results">
+      <button class="close" id="close">×</button>
+      <div class="result-grid">
+        <figure>
+          <figcaption>Native satellite source</figcaption>
+          <a id="nativeFull" target="_blank"><img id="native" /></a
+          ><a class="full-link" id="nativeFullText" target="_blank"
+            >Open full resolution ↗</a
+          >
+        </figure>
+        <figure>
+          <figcaption>Enhanced terrain</figcaption>
+          <a id="enhancedFull" target="_blank"><img id="enhanced" /></a
+          ><a class="full-link" id="enhancedFullText" target="_blank"
+            >Open full resolution ↗</a
+          >
+        </figure>
+        <figure>
+          <figcaption>Terrain + P3D objects</figcaption>
+          <a id="combinedFull" target="_blank"><img id="combined" /></a
+          ><a class="full-link" id="combinedFullText" target="_blank"
+            >Open full resolution ↗</a
+          >
+        </figure>
+      </div>
+    </section>
+    <script>
+      const ui = Object.fromEntries(
+        [
+          "mapSelect",
+          "viewMode",
+          "x",
+          "z",
+          "meters",
+          "zoom",
+          "detail",
+          "styleEditor",
+          "toggleStyleEditor",
+          "topoLayerControls",
+          "showTopoTerrain",
+          "showTopoSurfaces",
+          "showTopoWater",
+          "showTopoObjects",
+          "inspectTopoSurfaces",
+          "closeStyleEditor",
+          "styleVariant",
+          "styleCategory",
+          "styleSubclass",
+          "styleColor",
+          "styleAlpha",
+          "styleAlphaValue",
+          "resetStyle",
+          "saveStyle",
+          "finalPanel",
+          "toggleFinalPanel",
+          "closeFinalPanel",
+          "renderPoolPanel",
+          "toggleRenderPoolPanel",
+          "closeRenderPoolPanel",
+          "renderPoolMaps",
+          "renderPoolWorkers",
+          "workerPackageStatus",
+          "buildWorkerPackage",
+          "downloadWorkerPackage",
+          "finalMap",
+          "finalZoom",
+          "finalLayer",
+          "finalMissingOnly",
+          "repairMissingTiles",
+          "finalSatellite",
+          "finalTopographic",
+          "finalVersion",
+          "finalWorkers",
+          "finalWorkersValue",
+          "finalProgress",
+          "viewProductionOutput",
+          "startFinalBuild",
+          "cancelFinalBuild",
+          "retryFinalBuild",
+          "refreshFinalJobs",
+          "dismissFinalJob",
+          "clearGeneratedTiles",
+          "metersValue",
+          "zoomValue",
+          "detailValue",
+          "pixelInfo",
+          "preview",
+          "status",
+          "log",
+          "results",
+          "native",
+          "enhanced",
+          "combined",
+          "nativeFull",
+          "enhancedFull",
+          "combinedFull",
+          "nativeFullText",
+          "enhancedFullText",
+          "combinedFullText",
+          "close",
+        ].map((id) => [id, document.getElementById(id)]),
+      );
+      let maps = [],
+        active = null,
+        map = null,
+        layer = null,
+        terrainVector = null,
+        surfaceVector = null,
+        waterVector = null,
+        objectVector = null,
+        topoPreviewLayers = [],
+        activeTopoPreviewUrl = null,
+        marker = null,
+        footprint = null,
+        previewOverlay = null,
+        pollTimer = null;
+      const STYLE_GROUPS = {
+        surface: {
+          label: "Terrain surfaces",
+          items: {
+            en_deforested: "#c8bd91",
+            en_flowers1: "#b8cd83",
+            en_flowers2: "#aecd79",
+            en_flowers3: "#c5cf86",
+            en_forest_con: "#789263",
+            en_forest_dec: "#91a96e",
+            en_grass1: "#c7d394",
+            en_grass2: "#b8c986",
+            en_soil: "#b29a73",
+            en_stones: "#aaa99b",
+            en_stubble: "#d2c58c",
+            en_tarmac_old: "#aaa8a0",
+            cp_broadleaf_dense1: "#708559",
+            cp_broadleaf_dense2: "#667c50",
+            cp_broadleaf_sparse1: "#8ca36d",
+            cp_broadleaf_sparse2: "#98aa78",
+            cp_concrete1: "#aaa9a1",
+            cp_concrete2: "#96968f",
+            cp_conifer_common1: "#607850",
+            cp_conifer_common2: "#566e48",
+            cp_conifer_moss1: "#718260",
+            cp_conifer_moss2: "#65775a",
+            cp_dirt: "#aa956f",
+            cp_grass: "#b9ca87",
+            cp_grass_tall: "#aabd78",
+            cp_gravel: "#aaa38e",
+            cp_rock: "#8d8d82",
+            sakhal_beach: "#b7ad94",
+            sakhal_concrete: "#999b99",
+            sakhal_forest_birch: "#87947e",
+            sakhal_forest_spruce: "#687765",
+            sakhal_grass_brown: "#a39a77",
+            sakhal_grass_green: "#91a277",
+            sakhal_gravel: "#99978d",
+            sakhal_ice_lake: "#b8d4dc",
+            sakhal_ice_sea: "#a8cbd7",
+            sakhal_snow: "#e4e8e5",
+            sakhal_snow_forest: "#d4ddd7",
+            sakhal_volcanic_red: "#9b7569",
+            sakhal_volcanic_yellow: "#ae9b70",
+            other: "#c2cc9a",
+          },
+        },
+        building: {
+          label: "Buildings",
+          items: {
+            house: "#34383a",
+            apartment: "#3d4143",
+            commercial: "#484b4c",
+            industrial: "#555b60",
+            military: "#4d5550",
+            medical: "#e4ded6",
+            farm: "#62584a",
+            religious: "#504d58",
+            utility: "#555b60",
+            transport: "#4d5154",
+            harbour: "#53585b",
+            ruin: "#69675f",
+            shed_garage: "#555653",
+            tent: "#6b705d",
+            misc: "#34383a",
+          },
+        },
+        barrier: {
+          label: "Fences, walls & gates",
+          items: {
+            fence_wood: "#725c43",
+            fence_metal: "#666b6c",
+            wall_stone: "#77756d",
+            wall_concrete: "#858580",
+            gate: "#5d5f5d",
+            hedge: "#58724c",
+            misc: "#666760",
+          },
+        },
+        vegetation: {
+          label: "Vegetation",
+          items: {
+            tree_deciduous: "#668151",
+            tree_conifer: "#52734d",
+            tree_dead: "#736c59",
+            bush: "#718b58",
+            stump: "#766b55",
+            misc: "#668151",
+          },
+        },
+        transport: {
+          label: "Roads & rail",
+          items: {
+            road_asphalt: "#555957",
+            road_gravel: "#77746c",
+            road_dirt: "#8a765c",
+            road_concrete: "#777a78",
+            road_other: "#5d615f",
+            sidewalk: "#858782",
+            rail_track: "#4c4d4b",
+            bridge: "#626566",
+          },
+        },
+        decal: {
+          label: "Decals & markings",
+          items: {
+            road_marking: "#d5d1bd",
+            runway_marking: "#dad8ce",
+            ground_damage: "#756d61",
+            ground_detail: "#796f5d",
+            graffiti: "#665c62",
+            misc: "#6c665d",
+          },
+        },
+        water: {
+          label: "Water",
+          items: {
+            regular: "#76a9d4",
+            moss: "#6f9f91",
+            ice: "#ffffff",
+            iceberg: "#c9dde2",
+          },
+        },
+        rock: { label: "Rocks", items: { rock: "#777a70" } },
+        wreck: { label: "Wrecks", items: { wreck: "#4b4d4c" } },
+        misc: { label: "Miscellaneous", items: { object: "#34383a" } },
+      };
+      const DEFAULT_STYLE_COLORS = {};
+      for (const [group, definition] of Object.entries(STYLE_GROUPS))
+        for (const [sub, color] of Object.entries(definition.items))
+          DEFAULT_STYLE_COLORS[`${group}.${sub}`] = color;
+      function darkDefault(value) {
+        const parts = colorParts(value),
+          rgb = [1, 3, 5].map((i) =>
+            Math.round(parseInt(parts.rgb.slice(i, i + 2), 16) * 0.5 + 12),
+          );
+        return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}${Math.round(
+          parts.alpha * 255,
+        )
+          .toString(16)
+          .padStart(2, "0")}`;
+      }
+      const DEFAULT_STYLE_VARIANTS = {
+        light: { ...DEFAULT_STYLE_COLORS },
+        dark: Object.fromEntries(
+          Object.entries(DEFAULT_STYLE_COLORS).map(([key, value]) => [
+            key,
+            darkDefault(value),
+          ]),
+        ),
+      };
+      let styleVariants = {
+          light: { ...DEFAULT_STYLE_VARIANTS.light },
+          dark: { ...DEFAULT_STYLE_VARIANTS.dark },
+        },
+        styleColors = styleVariants.light;
+      const worldBounds = [
+        [-256, 0],
+        [0, 256],
+      ];
+      function localToLatLng(x, z) {
+        return [(z / active.mapSize) * 256 - 256, (x / active.mapSize) * 256];
+      }
+      function updateLabels() {
+        ui.metersValue.textContent = `${ui.meters.value} m`;
+        ui.zoomValue.textContent = `zoom ${ui.zoom.value}`;
+        ui.detailValue.textContent = Number(ui.detail.value).toFixed(2);
+        const ppm = (256 * 2 ** Number(ui.zoom.value)) / active.mapSize,
+          size = Math.round(Number(ui.meters.value) * ppm);
+        const tooLarge = size > 8192;
+        ui.pixelInfo.textContent = `${size.toLocaleString()} × ${size.toLocaleString()} px · ${(1 / ppm).toFixed(3)} m/px${tooLarge ? " · reduce area to stay under 8,192 px" : ""}`;
+        ui.pixelInfo.style.color = tooLarge ? "#ff9b8f" : "";
+        ui.preview.disabled = tooLarge;
+        const x = Number(ui.x.value),
+          z = Number(ui.z.value),
+          h = Number(ui.meters.value) / 2;
+        if (marker) marker.setLatLng(localToLatLng(x, z));
+        const corners = [
+          localToLatLng(x - h, z - h),
+          localToLatLng(x + h, z + h),
+        ];
+        if (footprint) footprint.setBounds(corners);
+        else
+          footprint = L.rectangle(corners, {
+            color: "#68b5ff",
+            weight: 2,
+            fillOpacity: 0.08,
+            interactive: false,
+          }).addTo(map);
+      }
+      function styleKey(properties) {
+        const model = String(properties.model || "").toLowerCase();
+        if (properties.material) return `surface.${properties.material}`;
+        // Sakhal iceberg chunks live under water_sakhal\ice_sea\... - that
+        // path contains "water_sakhal\" too, so this has to be checked
+        // before the general water test below or every iceberg falls into
+        // water.regular. build-vector-section.js treats these as solid
+        // objects (not water) for the same reason - see isIcebergChunkModel().
+        if (/ice_sea_(?:piece|square|triangle)/.test(model))
+          return "water.iceberg";
+        if (
+          properties.isWater === true ||
+          properties.isWater === 1 ||
+          /(?:^|\\)water(?:_(?:bliss|sakhal))?\\/.test(model) ||
+          /(?:^|\\)(?:pond|river|lake)[^\\]*\.p3d$/.test(model)
+        )
+          return `water.${properties.waterType === "ice" || /ice_lake/.test(model) ? "ice" : properties.waterType === "moss" || /moss/.test(model) ? "moss" : "regular"}`;
+        if (/\\rail\\|rail_track|railway/.test(model))
+          return /bridge/.test(model)
+            ? "transport.bridge"
+            : "transport.rail_track";
+        if (
+          /\\roads(?:_bliss|_sakhal)?\\decals\\|road[_\\-]?mark|crosswalk|zebra/.test(
+            model,
+          )
+        )
+          return "decal.road_marking";
+        if (
+          /runway|taxiway|helipad|airfield/.test(model) &&
+          /decal|mark|line/.test(model)
+        )
+          return "decal.runway_marking";
+        if (/graffiti/.test(model)) return "decal.graffiti";
+        if (
+          /crack|damage|oil|blood|burn|scorch/.test(model) &&
+          /decal|ground|road|misc/.test(model)
+        )
+          return "decal.ground_damage";
+        if (
+          /decal|dirtpatch|ground[_-]?(?:detail|patch)|garbage[_-]?(?:ground|pile)/.test(
+            model,
+          )
+        )
+          return "decal.ground_detail";
+        if (
+          properties.isRoad === true ||
+          properties.isRoad === 1 ||
+          model.includes("\\roads")
+        ) {
+          if (/sidewalk|chodnik|pavement/.test(model))
+            return "transport.sidewalk";
+          if (/bridge/.test(model)) return "transport.bridge";
+          if (/panel|concrete|beton/.test(model))
+            return "transport.road_concrete";
+          if (/gravel|sterk|grav/.test(model)) return "transport.road_gravel";
+          if (/dirt|mud|forest|path|trail/.test(model))
+            return "transport.road_dirt";
+          if (/asf|asphalt|tarmac|highway/.test(model))
+            return "transport.road_asphalt";
+          return "transport.road_other";
+        }
+        if (/wreck/.test(model)) return "wreck.wreck";
+        if (
+          /(?:^|\\)(?:rocks?|rockformations?)(?:\\|_)|(?:^|\\)[^\\]*(?:rock|boulder)[^\\]*\.p3d$/.test(
+            model,
+          ) &&
+          !/wall/.test(model)
+        )
+          return "rock.rock";
+        if (/fence|wall|gate|hedge/.test(model)) {
+          if (/hedge/.test(model)) return "barrier.hedge";
+          if (/gate/.test(model)) return "barrier.gate";
+          if (/wall/.test(model))
+            return /stone|brick/.test(model)
+              ? "barrier.wall_stone"
+              : "barrier.wall_concrete";
+          if (/wood|log/.test(model)) return "barrier.fence_wood";
+          if (/metal|wire|chain/.test(model)) return "barrier.fence_metal";
+          return "barrier.misc";
+        }
+        if (/plant|tree|bush|stump/.test(model)) {
+          if (/stump/.test(model)) return "vegetation.stump";
+          if (/bush/.test(model)) return "vegetation.bush";
+          if (/dead|fallen|\\d_/.test(model)) return "vegetation.tree_dead";
+          if (/picea|abies|pinus|conifer|spruce/.test(model))
+            return "vegetation.tree_conifer";
+          if (/tree/.test(model)) return "vegetation.tree_deciduous";
+          return "vegetation.misc";
+        }
+        if (
+          /structure|building|house|industrial|shed|barn|church|chapel|ruin|military|apartment|hospital|school|shop|hotel|garage|hangar/.test(
+            model,
+          )
+        ) {
+          if (/church|chapel/.test(model)) return "building.religious";
+          if (/military|barrack|bunker/.test(model)) return "building.military";
+          if (/hospital|medical|clinic|health/.test(model))
+            return "building.medical";
+          if (
+            /shop|store|market|hotel|pub|restaurant|office|school/.test(model)
+          )
+            return "building.commercial";
+          if (/apartment|panelak|tenement|block_of_flats/.test(model))
+            return "building.apartment";
+          if (/harbour|harbor|pier|dock|lighthouse/.test(model))
+            return "building.harbour";
+          if (/station|depot|hangar|airport|terminal/.test(model))
+            return "building.transport";
+          if (
+            /power|utility|transformer|waterstation|pump|antenna|communication/.test(
+              model,
+            )
+          )
+            return "building.utility";
+          if (/industrial|factory|warehouse|workshop|mine|quarry/.test(model))
+            return "building.industrial";
+          if (/farm|barn|stable|silo/.test(model)) return "building.farm";
+          if (/ruin|damaged|wrecked/.test(model)) return "building.ruin";
+          if (/shed|garage|outhouse/.test(model)) return "building.shed_garage";
+          if (/tent/.test(model)) return "building.tent";
+          if (/house|residential|cottage|villa/.test(model))
+            return "building.house";
+          return "building.misc";
+        }
+        return "misc.object";
+      }
+      function refreshStyleEditor() {
+        ui.styleCategory.innerHTML = Object.entries(STYLE_GROUPS)
+          .map(
+            ([key, value]) => `<option value="${key}">${value.label}</option>`,
+          )
+          .join("");
+        updateStyleSubclasses();
+      }
+      function updateStyleSubclasses() {
+        const group = ui.styleCategory.value || Object.keys(STYLE_GROUPS)[0];
+        ui.styleSubclass.innerHTML = Object.keys(STYLE_GROUPS[group].items)
+          .map(
+            (key) =>
+              `<option value="${key}">${key.replaceAll("_", " ")}</option>`,
+          )
+          .join("");
+        updateStyleColor();
+      }
+      function colorParts(value) {
+        const color = /^#[0-9a-f]{8}$/i.test(value)
+          ? value
+          : `${value.slice(0, 7)}ff`;
+        return {
+          rgb: color.slice(0, 7),
+          alpha: parseInt(color.slice(7, 9), 16) / 255,
+        };
+      }
+      function editorColor() {
+        const alpha = Math.round((Number(ui.styleAlpha.value) / 100) * 255)
+          .toString(16)
+          .padStart(2, "0");
+        return `${ui.styleColor.value}${alpha}`;
+      }
+      function updateStyleColor() {
+        const parts = colorParts(
+          styleColors[`${ui.styleCategory.value}.${ui.styleSubclass.value}`] ||
+            "#34383a",
+        );
+        ui.styleColor.value = parts.rgb;
+        ui.styleAlpha.value = Math.round(parts.alpha * 100);
+        ui.styleAlphaValue.textContent = `${ui.styleAlpha.value}%`;
+      }
+      function resetSelectedStyle() {
+        const key = `${ui.styleCategory.value}.${ui.styleSubclass.value}`,
+          variant = ui.styleVariant.value;
+        styleColors[key] = DEFAULT_STYLE_VARIANTS[variant][key];
+        updateStyleColor();
+        redrawStyles();
+        ui.status.textContent = `Selected ${variant} color reset; click Save to persist`;
+      }
+      function redrawStyles() {
+        for (const vector of [
+          terrainVector,
+          surfaceVector,
+          waterVector,
+          ...topoPreviewLayers,
+        ])
+          if (vector?.redraw) vector.redraw();
+      }
+      async function loadStyleProfile() {
+        const profile = await fetch(`/api/map-render/styles/${active.id}`).then(
+            (r) => r.json(),
+          ),
+          saved = profile.variants || { light: profile.colors || {}, dark: {} };
+        styleVariants = {
+          light: { ...DEFAULT_STYLE_VARIANTS.light, ...(saved.light || {}) },
+          dark: { ...DEFAULT_STYLE_VARIANTS.dark, ...(saved.dark || {}) },
+        };
+        styleColors = styleVariants[ui.styleVariant.value];
+        refreshStyleEditor();
+        redrawStyles();
+      }
+      async function saveStyleProfile() {
+        ui.saveStyle.disabled = true;
+        const response = await fetch(`/api/map-render/styles/${active.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ variants: styleVariants }),
+        });
+        const result = await response.json();
+        ui.saveStyle.disabled = false;
+        ui.status.textContent = response.ok
+          ? `Both palettes saved and published to ${result.publishedVersions || 0} rendered version(s); no geometry rerender needed`
+          : result.error;
+      }
+      // When "View production output" is checked and a final-build job
+      // covers this map, route tile requests through the live-tile endpoint
+      // instead of the published final-tile endpoint. The server already
+      // falls back per-tile (in-progress job output -> previously active
+      // version -> raw source data) at every zoom, for every layer, so this
+      // is a pure URL swap - no client-side zoom locking or fallback logic
+      // needed. Works for any map/mode, not just whatever the job happens
+      // to be working on right now.
+      function productionBase(mapId, mode) {
+        const job = activeFinalJob;
+        if (
+          ui.viewProductionOutput.checked &&
+          job &&
+          job.status === "running" &&
+          job.maps.includes(mapId)
+        )
+          return `/api/map-render/live-tile/${job.id}/${mapId}/${mode}`;
+        return `/api/map-render/final-tile/${mapId}/${mode}`;
+      }
+      function selectMap(id) {
+        active = maps.find((m) => m.id === id);
+        if (layer) map.removeLayer(layer);
+        if (previewOverlay) {
+          map.removeLayer(previewOverlay);
+          previewOverlay = null;
+        }
+        for (const vector of [
+          terrainVector,
+          surfaceVector,
+          waterVector,
+          objectVector,
+          ...topoPreviewLayers,
+        ])
+          if (vector && map.hasLayer(vector)) map.removeLayer(vector);
+        terrainVector = surfaceVector = waterVector = objectVector = null;
+        topoPreviewLayers = [];
+        activeTopoPreviewUrl = null;
+        const satelliteCoverage = active.activeFinalCoverage?.satellite || [],
+          satelliteNative = Math.max(
+            active.web?.maxNativeZoom || 6,
+            ...satelliteCoverage,
+          );
+        if (active.web?.baseTiles)
+          layer = L.tileLayer(
+            `${productionBase(active.id, "satellite")}/{z}/{x}/{y}.png`,
+            {
+              minZoom: 0,
+              maxZoom: 10,
+              maxNativeZoom: satelliteNative,
+              noWrap: true,
+              bounds: worldBounds,
+              // Keep a ring of off-screen tiles loaded instead of discarding
+              // them the instant they leave the viewport - panning back
+              // (very common - users overshoot and correct) then reuses
+              // already-fetched tiles instead of re-requesting.
+              keepBuffer: 4,
+            },
+          ).addTo(map);
+        ui.x.value = active.preview.x ?? active.mapSize / 2;
+        ui.z.value = active.preview.z ?? active.mapSize / 2;
+        ui.meters.value = active.preview.meters ?? 1000;
+        ui.zoom.value = active.preview.zoom ?? 8;
+        ui.detail.value = active.preview.detailStrength ?? 0.22;
+        map.fitBounds(worldBounds);
+        updateLabels();
+        updateZoomReadout();
+        loadStyleProfile().catch(
+          (error) => (ui.status.textContent = error.message),
+        );
+      }
+      function terrainStyle(properties) {
+        const elevation = Number(properties.elev ?? properties.elevation ?? 0),
+          t = Math.max(0, Math.min(1, (elevation - 140) / 180));
+        const dark = ui.styleVariant.value === "dark",
+          light = Math.round(dark ? 18 + t * 13 : 91 - t * 25),
+          sat = Math.round(dark ? 16 + t * 8 : 22 + t * 10);
+        return {
+          fill: true,
+          fillColor: `hsl(82 ${sat}% ${light}%)`,
+          fillOpacity: 1,
+          color: dark ? "rgba(190,200,170,.38)" : "rgba(113,105,76,.48)",
+          weight: 0.65,
+        };
+      }
+      function objectStyle(properties) {
+        const model = String(properties.model || "");
+        const water =
+          properties.isWater === true ||
+          properties.isWater === 1 ||
+          /(?:^|\\)water(?:_bliss)?\\/i.test(model) ||
+          /(?:^|\\)(?:pond|river|lake)[^\\]*\.p3d$/i.test(model);
+        const road =
+          properties.isRoad === true ||
+          properties.isRoad === 1 ||
+          model.includes("\\roads");
+        const fill = colorParts(styleColors[styleKey(properties)] || "#34383a");
+        if (water)
+          return {
+            fill: true,
+            fillColor: fill.rgb,
+            fillOpacity: fill.alpha,
+            stroke: false,
+            weight: 0,
+          };
+        if (road)
+          return {
+            fill: true,
+            fillColor: fill.rgb,
+            fillOpacity: fill.alpha,
+            stroke: false,
+            weight: 0,
+          };
+        return {
+          fill: true,
+          fillColor: fill.rgb,
+          fillOpacity: fill.alpha,
+          stroke: false,
+          weight: 0,
+        };
+      }
+      function mixColor(a, b, t) {
+        const ca = colorParts(a),
+          cb = colorParts(b),
+          parse = (value) =>
+            [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16)),
+          aa = parse(ca.rgb),
+          bb = parse(cb.rgb);
+        return {
+          rgb: `#${aa
+            .map((value, i) =>
+              Math.round(value + (bb[i] - value) * t)
+                .toString(16)
+                .padStart(2, "0"),
+            )
+            .join("")}`,
+          alpha: ca.alpha + (cb.alpha - ca.alpha) * t,
+        };
+      }
+      function escapeHtml(value) {
+        return String(value ?? "").replace(
+          /[&<>"']/g,
+          (char) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[char],
+        );
+      }
+      function showObjectPopup(latlng, properties) {
+        const classification = styleKey(properties),
+          rows = [
+            ["Model", properties.model],
+            ["Style class", classification],
+            ["Placement ID", properties.id],
+            ["Geometry", properties.geometrySource],
+            ["Base elevation", properties.baseElevation],
+            ["Top elevation", properties.topElevation],
+            ["Source placements", properties.sourcePlacements],
+          ].filter(([, value]) => value !== undefined && value !== null);
+        L.popup({ maxWidth: 430 })
+          .setLatLng(latlng)
+          .setContent(
+            `<div style="min-width:240px;color:#111"><strong>${escapeHtml(properties.model || "Vector object")}</strong>${rows
+              .slice(1)
+              .map(
+                ([label, value]) =>
+                  `<div><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</div>`,
+              )
+              .join("")}</div>`,
+          )
+          .openOn(map);
+      }
+      function attachObjectInspector(vector) {
+        vector.on("click", (event) => {
+          if (event.originalEvent)
+            event.originalEvent._objectVectorHandled = true;
+          showObjectPopup(
+            event.latlng,
+            event.layer?.properties || event.propagatedFrom?.properties || {},
+          );
+        });
+        return vector;
+      }
+      function attachSurfaceInspector(vector) {
+        if (!vector || vector._surfaceInspectorAttached) return vector;
+        vector._surfaceInspectorAttached = true;
+        vector.on("click", (event) => {
+          if (event.originalEvent) event.originalEvent._objectVectorHandled = true;
+          const p=event.layer?.properties||event.propagatedFrom?.properties||{},dominant=p.dominantMaterial||(Number(p.blendWeight||0)<=.5?p.materialA:p.materialB),x=event.latlng.lng/256*active.mapSize,z=(event.latlng.lat+256)/256*active.mapSize;
+          L.popup({maxWidth:430}).setLatLng(event.latlng).setContent(`<div style="min-width:250px;color:#111"><strong>${escapeHtml(dominant||"Unknown surface")}</strong><div><b>Dominant:</b> ${escapeHtml(dominant)}</div><div><b>Material A:</b> ${escapeHtml(p.materialA)}</div><div><b>Material B:</b> ${escapeHtml(p.materialB)}</div><div><b>Blend weight:</b> ${escapeHtml(p.blendWeight)}</div><div><b>Position:</b> ${Math.round(x)}, ${Math.round(z)}</div></div>`).openOn(map);
+        });
+        return vector;
+      }
+      function showSurfacePopup(latlng,p={}){const surface=p.surface||p.dominantMaterial||(Number(p.blendWeight||0)<=.5?p.materialA:p.materialB),x=latlng.lng/256*active.mapSize,z=(latlng.lat+256)/256*active.mapSize;L.popup({maxWidth:430}).setLatLng(latlng).setContent(`<div style="min-width:250px;color:#111"><strong>${escapeHtml(surface||"Unknown surface")}</strong><div><b>Surface:</b> ${escapeHtml(surface)}</div><div><b>Position:</b> ${Math.round(x)}, ${Math.round(z)}</div></div>`).openOn(map)}
+      function surfaceStyle(properties) {
+        let fill;
+        if (properties.surface || properties.dominantMaterial || properties.materialA) {
+          const dominant =
+            properties.surface || properties.dominantMaterial ||
+            (Number(properties.blendWeight || 0) <= 0.5
+              ? properties.materialA
+              : properties.materialB);
+          fill = colorParts(
+            styleColors[`surface.${dominant}`] || styleColors["surface.other"],
+          );
+        } else
+          fill = colorParts(
+            styleColors[styleKey(properties)] || styleColors["surface.other"],
+          );
+        return {
+          fill: true,
+          fillColor: fill.rgb,
+          fillOpacity: fill.alpha,
+          color: "transparent",
+          stroke: false,
+          weight: 0,
+        };
+      }
+      function topoLayerVisible(kind) {
+        return {
+          terrain: ui.showTopoTerrain.checked,
+          surfaces: ui.showTopoSurfaces.checked,
+          water: ui.showTopoWater.checked,
+          objects: ui.showTopoObjects.checked,
+        }[kind];
+      }
+      function applyTopoLayerVisibility() {
+        const entries = [
+          [terrainVector, "terrain"],
+          [surfaceVector, "surfaces"],
+          [waterVector, "water"],
+          [objectVector, "objects"],
+          ...topoPreviewLayers.map((item) => [item, item._topoLayerKind]),
+        ];
+        for(const [item,kind] of entries)if(kind==="surfaces")attachSurfaceInspector(item);
+        for (const [item] of entries)
+          if (item && map.hasLayer(item)) map.removeLayer(item);
+        if (ui.viewMode.value === "topographic")
+          for (const kind of ["terrain", "surfaces", "water", "objects"])
+            if (topoLayerVisible(kind))
+              for (const [item, itemKind] of entries)
+                if (item && itemKind === kind) item.addTo(map);
+        if (footprint) footprint.bringToFront();
+        if (marker) marker.bringToFront();
+      }
+      function selectViewMode() {
+        const topo = ui.viewMode.value === "topographic";
+        ui.toggleStyleEditor.style.display = topo ? "" : "none";
+        ui.topoLayerControls.hidden = !topo;
+        if (!topo) {
+          ui.styleEditor.hidden = true;
+          ui.toggleStyleEditor.textContent = "Show topographic color editor";
+        }
+        if (topo) {
+          if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+          if (previewOverlay && map.hasLayer(previewOverlay))
+            map.removeLayer(previewOverlay);
+          map.getContainer().style.background =
+            ui.styleVariant.value === "dark" ? "#171c19" : "#e2e6d5";
+          const finalMode = "topographic";
+          const topoCoverage = active.activeFinalCoverage?.topographic || [],
+            topoNative = Math.max(4, ...topoCoverage);
+          if (!terrainVector)
+            terrainVector = L.vectorGrid
+              .protobuf(
+                `${productionBase(active.id, finalMode)}/terrain/{z}/{x}/{y}.pbf`,
+                {
+                  minZoom: 0,
+                  maxNativeZoom: topoNative,
+                  maxZoom: 10,
+                  rendererFactory: L.canvas.tile,
+                  vectorTileLayerStyles: { terrain: terrainStyle },
+                  interactive: false,
+                },
+              )
+              .addTo(map);
+          else terrainVector.addTo(map);
+          if (!surfaceVector)
+            surfaceVector = L.vectorGrid
+              .protobuf(
+                `${productionBase(active.id, finalMode)}/surfaces/{z}/{x}/{y}.pbf`,
+                {
+                  minZoom: 0,
+                  maxNativeZoom: topoNative,
+                  maxZoom: 10,
+                  rendererFactory: L.canvas.tile,
+                  vectorTileLayerStyles: { surfaces: surfaceStyle },
+                  interactive: true,
+                },
+              )
+              .addTo(map);
+          else surfaceVector.addTo(map);
+          if (active.water?.source === "terrain-elevation") {
+            if (!waterVector)
+              waterVector = L.vectorGrid
+                .protobuf(
+                  `${productionBase(active.id, finalMode)}/water/{z}/{x}/{y}.pbf`,
+                  {
+                    minZoom: 0,
+                    maxNativeZoom: topoNative,
+                    maxZoom: 10,
+                    rendererFactory: L.canvas.tile,
+                    vectorTileLayerStyles: { water: objectStyle },
+                    interactive: false,
+                  },
+                )
+                .addTo(map);
+            else waterVector.addTo(map);
+          }
+          if (topoCoverage.length && !objectVector) {
+            objectVector = attachObjectInspector(
+              L.vectorGrid
+                .protobuf(
+                  `${productionBase(active.id, finalMode)}/objects/{z}/{x}/{y}.pbf`,
+                  {
+                    minZoom: 0,
+                    maxNativeZoom: topoNative,
+                    maxZoom: 10,
+                    rendererFactory: L.canvas.tile,
+                    vectorTileLayerStyles: { objects: objectStyle },
+                    interactive: true,
+                  },
+                )
+                .addTo(map),
+            );
+          } else if (objectVector && !map.hasLayer(objectVector))
+            objectVector.addTo(map);
+          for (const vector of topoPreviewLayers)
+            if (!map.hasLayer(vector)) vector.addTo(map);
+          applyTopoLayerVisibility();
+        } else {
+          if (terrainVector && map.hasLayer(terrainVector))
+            map.removeLayer(terrainVector);
+          if (surfaceVector && map.hasLayer(surfaceVector))
+            map.removeLayer(surfaceVector);
+          if (waterVector && map.hasLayer(waterVector))
+            map.removeLayer(waterVector);
+          if (objectVector && map.hasLayer(objectVector))
+            map.removeLayer(objectVector);
+          for (const vector of topoPreviewLayers)
+            if (map.hasLayer(vector)) map.removeLayer(vector);
+          map.getContainer().style.background = "#202830";
+          if (layer && !map.hasLayer(layer)) layer.addTo(map);
+          if (previewOverlay && !map.hasLayer(previewOverlay))
+            previewOverlay.addTo(map);
+        }
+        footprint.bringToFront();
+        marker.bringToFront();
+      }
+      async function startPreview() {
+        ui.preview.disabled = true;
+        ui.results.style.display = "none";
+        ui.log.hidden = false;
+        ui.log.textContent = "";
+        ui.status.textContent = "Starting preview…";
+        const x = Number(ui.x.value),
+          z = Number(ui.z.value),
+          meters = Number(ui.meters.value),
+          h = meters / 2;
+        const renderBounds = L.latLngBounds(
+          localToLatLng(x - h, z - h),
+          localToLatLng(x + h, z + h),
+        );
+        const response = await fetch("/api/map-render/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mapId: active.id,
+            viewMode: ui.viewMode.value,
+            x,
+            z,
+            meters,
+            zoom: Number(ui.zoom.value),
+            detailStrength: Number(ui.detail.value),
+          }),
+        });
+        const job = await response.json();
+        if (!response.ok) {
+          ui.status.textContent = job.error;
+          ui.preview.disabled = false;
+          return;
+        }
+        poll(job.id, renderBounds);
+      }
+      async function poll(id, renderBounds) {
+        clearTimeout(pollTimer);
+        const job = await fetch(`/api/map-render/jobs/${id}`).then((r) =>
+          r.json(),
+        );
+        ui.log.textContent = (job.progress || []).join("\n");
+        ui.log.scrollTop = ui.log.scrollHeight;
+        ui.status.textContent =
+          job.status === "running" ? "Rendering preview…" : job.status;
+        if (job.status === "running") {
+          pollTimer = setTimeout(() => poll(id, renderBounds), 800);
+          return;
+        }
+        ui.preview.disabled = false;
+        if (job.status !== "complete") {
+          ui.status.textContent = job.error || "Preview failed";
+          return;
+        }
+        if (job.viewMode === "topographic") {
+          for (const vector of topoPreviewLayers)
+            if (map.hasLayer(vector)) map.removeLayer(vector);
+          const stamp = `v=${Date.now()}`,
+            base = job.outputUrl;
+          activeTopoPreviewUrl = base;
+          topoPreviewLayers = [
+            L.vectorGrid.protobuf(`${base}/terrain/{z}/{x}/{y}.pbf?${stamp}`, {
+              minZoom: 5,
+              maxNativeZoom: 8,
+              maxZoom: 10,
+              rendererFactory: L.canvas.tile,
+              vectorTileLayerStyles: { terrain: terrainStyle },
+              interactive: false,
+            }),
+            L.vectorGrid.protobuf(`${base}/surfaces/{z}/{x}/{y}.pbf?${stamp}`, {
+              minZoom: 5,
+              maxNativeZoom: 8,
+              maxZoom: 10,
+              rendererFactory: L.canvas.tile,
+              vectorTileLayerStyles: { surfaces: surfaceStyle },
+              interactive: true,
+            }),
+            ...(active.water?.source === "terrain-elevation"
+              ? [
+                  L.vectorGrid.protobuf(
+                    `${base}/water/{z}/{x}/{y}.pbf?${stamp}`,
+                    {
+                      minZoom: 5,
+                      maxNativeZoom: 8,
+                      maxZoom: 10,
+                      rendererFactory: L.canvas.tile,
+                      vectorTileLayerStyles: { water: objectStyle },
+                      interactive: false,
+                    },
+                  ),
+                ]
+              : []),
+            L.vectorGrid.protobuf(`${base}/objects/{z}/{x}/{y}.pbf?${stamp}`, {
+              minZoom: 5,
+              maxNativeZoom: 8,
+              maxZoom: 10,
+              rendererFactory: L.canvas.tile,
+              vectorTileLayerStyles: { objects: objectStyle },
+              interactive: false,
+            }),
+          ];
+          const previewKinds = active.water?.source === "terrain-elevation"
+            ? ["terrain", "surfaces", "water", "objects"]
+            : ["terrain", "surfaces", "objects"];
+          topoPreviewLayers.forEach(
+            (vector, index) => (vector._topoLayerKind = previewKinds[index]),
+          );
+          for (const vector of topoPreviewLayers) vector.addTo(map);
+          applyTopoLayerVisibility();
+          footprint.bringToFront();
+          marker.bringToFront();
+          ui.results.style.display = "none";
+          ui.status.textContent = "Topographic preview complete";
+          return;
+        }
+        const stamp = `?v=${Date.now()}`;
+        const urls = {
+          native: `${job.outputUrl}/native-satellite.png${stamp}`,
+          enhanced: `${job.outputUrl}/enhanced.png${stamp}`,
+          combined: `${job.outputUrl}/combined.png${stamp}`,
+        };
+        ui.native.src = urls.native;
+        ui.enhanced.src = urls.enhanced;
+        ui.combined.src = `${job.outputUrl}/combined-preview.png${stamp}`;
+        for (const name of ["native", "enhanced", "combined"]) {
+          ui[`${name}Full`].href = urls[name];
+          ui[`${name}FullText`].href = urls[name];
+        }
+        if (previewOverlay) map.removeLayer(previewOverlay);
+        previewOverlay = L.imageOverlay(urls.combined, renderBounds, {
+          opacity: 1,
+          interactive: false,
+        });
+        if (ui.viewMode.value === "satellite") previewOverlay.addTo(map);
+        footprint.bringToFront();
+        marker.bringToFront();
+        ui.results.style.display = "block";
+        ui.status.textContent = "Preview complete";
+      }
+      function updateZoomReadout() {
+        if (!map) return;
+        const zoom = map.getZoom(),
+          rounded = Math.round(zoom),
+          maxNative = active?.web?.maxNativeZoom ?? 6,
+          overzoomed = rounded > maxNative;
+        document.getElementById("zoomReadout").innerHTML =
+          `Zoom: ${rounded} <span style="opacity:.6">(${zoom.toFixed(2)})</span>` +
+          (overzoomed
+            ? ` <span style="color:#e8a33d">overzoomed past z${maxNative}</span>`
+            : "");
+      }
+      async function init() {
+        maps = (await fetch("/api/map-render/maps").then((r) => r.json())).maps;
+        ui.mapSelect.innerHTML = maps
+          .map((m) => `<option value="${m.id}">${m.displayName}</option>`)
+          .join("");
+        ui.finalMap.innerHTML = `<option value="all">All maps</option>${maps.map((m) => `<option value="${m.id}">${m.displayName}</option>`).join("")}`;
+        ui.finalZoom.innerHTML = `<option value="all">All levels (0–8)</option>${Array.from({ length: 9 }, (_, z) => `<option value="${z}">Zoom ${z}</option>`).join("")}`;
+        // Default to whatever version is actually active in production
+        // instead of the meaningless placeholder "v1" - only relevant when
+        // every map agrees on one version, which is the normal case.
+        const activeVersions = new Set(
+          maps.map((m) => m.activeFinalVersion).filter(Boolean),
+        );
+        if (activeVersions.size === 1)
+          ui.finalVersion.value = [...activeVersions][0];
+        map = L.map("map", {
+          crs: L.CRS.Simple,
+          minZoom: 0,
+          maxZoom: 10,
+          maxBounds: worldBounds,
+          maxBoundsViscosity: 1,
+          attributionControl: false,
+        });
+        map.on("click", async (e) => {
+          if (e.originalEvent?._objectVectorHandled) return;
+          const x = (e.latlng.lng / 256) * active.mapSize,
+            z = ((e.latlng.lat + 256) / 256) * active.mapSize;
+          if (ui.viewMode.value === "topographic" && activeTopoPreviewUrl) {
+            try {
+              const response = await fetch("/api/map-render/inspect-object", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    previewUrl: activeTopoPreviewUrl,
+                    x,
+                    z,
+                    source: ui.inspectTopoSurfaces.checked ? "surfaces" : "objects",
+                  }),
+                }),
+                result = await response.json();
+              if (result.found) {
+                if(ui.inspectTopoSurfaces.checked)showSurfacePopup(e.latlng,result.properties);else showObjectPopup(e.latlng, result.properties);
+                return;
+              }
+            } catch {}
+          }
+          ui.x.value = Math.round(x);
+          ui.z.value = Math.round(z);
+          updateLabels();
+        });
+        marker = L.circleMarker([-128, 128], {
+          radius: 5,
+          color: "#fff",
+          fillColor: "#2475b9",
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(map);
+        map.on("zoom", updateZoomReadout);
+        selectMap(maps[0].id);
+        updateZoomReadout();
+        try {
+          const recent = await fetch("/api/map-render/final-jobs").then((r) =>
+              r.json(),
+            ),
+            job = recent.jobs?.[0];
+          if (job) {
+            activeFinalJob = job;
+            showFinalProgress(job);
+            ui.retryFinalBuild.hidden = ![
+              "failed",
+              "cancelled",
+              "interrupted",
+            ].includes(job.status);
+            ui.cancelFinalBuild.hidden = job.status !== "running";
+            ui.dismissFinalJob.hidden = job.status === "running";
+            if (job.status === "running") pollFinalBuild(job.id);
+          }
+        } catch {}
+      }
+      ["x", "z", "meters", "zoom", "detail"].forEach((id) =>
+        ui[id].addEventListener("input", updateLabels),
+      );
+      ui.styleCategory.addEventListener("change", updateStyleSubclasses);
+      ui.styleSubclass.addEventListener("change", updateStyleColor);
+      ui.styleVariant.addEventListener("change", () => {
+        styleColors = styleVariants[ui.styleVariant.value];
+        updateStyleColor();
+        if (ui.viewMode.value === "topographic")
+          map.getContainer().style.background =
+            ui.styleVariant.value === "dark" ? "#171c19" : "#e2e6d5";
+        redrawStyles();
+        ui.status.textContent = `Editing ${ui.styleVariant.value} topographic colors`;
+      });
+      function applyEditorColor() {
+        styleColors[`${ui.styleCategory.value}.${ui.styleSubclass.value}`] =
+          editorColor();
+        ui.styleAlphaValue.textContent = `${ui.styleAlpha.value}%`;
+        redrawStyles();
+      }
+      ui.styleColor.addEventListener("input", applyEditorColor);
+      ui.styleAlpha.addEventListener("input", applyEditorColor);
+      ui.resetStyle.addEventListener("click", resetSelectedStyle);
+      ui.saveStyle.addEventListener("click", saveStyleProfile);
+      function setStyleEditor(open) {
+        ui.styleEditor.hidden = !open;
+        ui.toggleStyleEditor.textContent = open
+          ? "Hide topographic color editor"
+          : "Show topographic color editor";
+      }
+      ui.toggleStyleEditor.addEventListener("click", () =>
+        setStyleEditor(ui.styleEditor.hidden),
+      );
+      ui.closeStyleEditor.addEventListener("click", () =>
+        setStyleEditor(false),
+      );
+      function setFinalPanel(open) {
+        ui.finalPanel.hidden = !open;
+        ui.toggleFinalPanel.textContent = open
+          ? "Hide final render panel"
+          : "Show final render panel";
+      }
+      let renderPoolPollTimer = null;
+      function setRenderPoolPanel(open) {
+        ui.renderPoolPanel.hidden = !open;
+        ui.toggleRenderPoolPanel.textContent = open
+          ? "Hide render pool status"
+          : "Show render pool status";
+        clearTimeout(renderPoolPollTimer);
+        if (open) pollRenderPool();
+      }
+      function workerElapsedText(startedAt) {
+        const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+        return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+      }
+      function formatEta(seconds) {
+        if (seconds == null) return null;
+        if (seconds < 90) return "< 2 min remaining";
+        const minutes = Math.round(seconds / 60);
+        if (minutes < 60) return `~${minutes} min remaining`;
+        const hours = Math.floor(minutes / 60), remMinutes = minutes % 60;
+        if (hours < 24) return `~${hours}h ${remMinutes}m remaining`;
+        const days = Math.floor(hours / 24), remHours = hours % 24;
+        return `~${days}d ${remHours}h remaining`;
+      }
+      async function pollRenderPool() {
+        try {
+          const [jobsRes, statusRes] = await Promise.all([
+            fetch("/api/render-pool/jobs").then((r) => r.json()),
+            fetch("/api/render-pool/status").then((r) => r.json()),
+          ]);
+          ui.renderPoolMaps.innerHTML = jobsRes.jobs.length
+            ? jobsRes.jobs
+                .map((job) => {
+                  const done = job.counts.complete + job.counts.broken;
+                  const eta = formatEta(job.etaSeconds);
+                  const detail =
+                    `${job.counts.pending} pending · ${job.counts.leased} in flight` +
+                    (job.counts.broken ? ` · ${job.counts.broken} broken` : "") +
+                    (job.skippedAlreadyDone ? ` · ${job.skippedAlreadyDone} already done (resumed)` : "") +
+                    (eta ? ` · ${eta}` : job.status === "running" ? " · estimating…" : "") +
+                    (job.tilesPerMinute ? ` (${job.tilesPerMinute.toFixed(1)} tiles/min)` : "");
+                  return progressRow(
+                    `${job.mapId} (${job.status})`,
+                    done,
+                    job.totalTasks,
+                    detail,
+                  );
+                })
+                .join("")
+            : `<div class="sub">No distributed render jobs yet.</div>`;
+          const workers = statusRes.workers.slice().sort((a, b) => a.label.localeCompare(b.label));
+          ui.renderPoolWorkers.innerHTML = workers.length
+            ? `<table class="pool-worker-table"><thead><tr><th>Worker</th><th>Current task</th><th>Done</th><th>Failed</th><th>Last seen</th></tr></thead><tbody>${workers
+                .map((worker) => {
+                  const task = worker.currentTask
+                    ? `${worker.currentTask.mapId} z${worker.currentTask.zoom} ${worker.currentTask.tx}/${worker.currentTask.ty} (${worker.currentTask.modes.join(",")}) · ${workerElapsedText(worker.currentTask.startedAt)}`
+                    : "idle";
+                  return `<tr><td>${escapeHtml(worker.label)}</td><td>${escapeHtml(task)}</td><td>${worker.tasksCompleted || 0}</td><td>${worker.tasksFailed || 0}</td><td>${workerElapsedText(worker.lastSeen)} ago</td></tr>`;
+                })
+                .join("")}</tbody></table>`
+            : `<div class="sub">No workers connected.</div>`;
+        } catch (error) {
+          ui.renderPoolMaps.innerHTML = `<div class="sub">Failed to load status: ${escapeHtml(error.message)}</div>`;
+        }
+        await pollWorkerPackage();
+        if (!ui.renderPoolPanel.hidden)
+          renderPoolPollTimer = setTimeout(pollRenderPool, 2000);
+      }
+      async function pollWorkerPackage() {
+        try {
+          const pkg = await fetch("/api/render-pool/package/status").then((r) => r.json());
+          const sizeText = pkg.sizeBytes ? ` (${(pkg.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GiB)` : "";
+          if (pkg.status === "building") {
+            ui.workerPackageStatus.textContent = `Building…${pkg.progress.length ? " " + pkg.progress[pkg.progress.length - 1] : ""}`;
+            ui.buildWorkerPackage.disabled = true;
+            ui.downloadWorkerPackage.hidden = true;
+          } else if (pkg.status === "ready") {
+            ui.workerPackageStatus.textContent = `Package ready${sizeText}.`;
+            ui.buildWorkerPackage.disabled = false;
+            ui.buildWorkerPackage.textContent = "Rebuild worker package";
+            ui.downloadWorkerPackage.hidden = false;
+          } else if (pkg.status === "failed") {
+            ui.workerPackageStatus.textContent = `Build failed: ${pkg.error || "unknown error"}`;
+            ui.buildWorkerPackage.disabled = false;
+            ui.downloadWorkerPackage.hidden = true;
+          } else {
+            ui.workerPackageStatus.textContent = "No package built yet.";
+            ui.buildWorkerPackage.disabled = false;
+            ui.downloadWorkerPackage.hidden = true;
+          }
+        } catch {
+          // Non-fatal - leave whatever status text was last shown.
+        }
+      }
+      async function buildWorkerPackage() {
+        ui.buildWorkerPackage.disabled = true;
+        ui.workerPackageStatus.textContent = "Starting build…";
+        try {
+          const response = await fetch("/api/render-pool/package/build", { method: "POST" });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            ui.workerPackageStatus.textContent = body.error || "Failed to start build";
+            ui.buildWorkerPackage.disabled = false;
+            return;
+          }
+        } catch (error) {
+          ui.workerPackageStatus.textContent = `Failed to start build: ${error.message}`;
+          ui.buildWorkerPackage.disabled = false;
+          return;
+        }
+        pollWorkerPackage();
+      }
+      function progressRow(label, completed, total, detail = "") {
+        const percent = total
+          ? Math.max(0, Math.min(100, Math.round((completed / total) * 100)))
+          : 0;
+        return `<div class="progress-row"><span><b>${label}</b><i>${completed}/${total} · ${percent}%</i></span><div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div>${detail ? `<div class="detail">${escapeHtml(detail)}</div>` : ""}</div>`;
+      }
+      function elapsedText(started) {
+        const seconds = Math.max(
+            0,
+            Math.floor((Date.now() - new Date(started).getTime()) / 1000),
+          ),
+          hours = Math.floor(seconds / 3600),
+          minutes = Math.floor((seconds % 3600) / 60);
+        return hours
+          ? `${hours}h ${minutes}m`
+          : minutes
+            ? `${minutes}m ${seconds % 60}s`
+            : `${seconds}s`;
+      }
+      function showFinalProgress(job) {
+        const summary = job.progressSummary || {
+            completed: 0,
+            total: 1,
+            byMode: {},
+          },
+          workers = Object.values(job.workerStates || {})
+            .filter((item) => item.worker > 0)
+            .sort((a, b) => a.worker - b.worker),
+          workerHtml = workers
+            .map(
+              (current) =>
+                `<div class="current-work"><strong>Renderer ${current.worker}: ${escapeHtml(current.label || current.stage)}</strong><div class="where">${escapeHtml(current.mapId)} · ${escapeHtml(current.mode)} · z${current.zoom} tile ${current.x}/${current.y}</div>${progressRow("Current stage", current.completed || 0, current.total || 1, current.detail || "")}</div>`,
+            )
+            .join("");
+        ui.finalProgress.innerHTML =
+          `<div class="sub">Elapsed ${elapsedText(job.createdAt)} · ${job.workers || 1} concurrent renderer${job.workers === 1 ? "" : "s"}</div>` +
+          workerHtml +
+          progressRow(
+            job.status === "complete"
+              ? "Complete"
+              : job.status === "failed"
+                ? "Failed"
+                : "Entire job",
+            summary.completed,
+            summary.total,
+          ) +
+          Object.entries(summary.byMode || {})
+            .map(([mode, value]) =>
+              progressRow(
+                mode.replaceAll("-", " "),
+                value.completed,
+                value.total,
+              ),
+            )
+            .join("") +
+          (job.error ? `<div class="sub">${escapeHtml(job.error)}</div>` : "");
+      }
+      // Rebuilds whichever tile layers are currently shown so their URLs
+      // pick up productionBase()'s current answer (called when the
+      // checkbox toggles). Zoom/pan is left untouched - unlike the old
+      // locked-zoom live view, this stays inside the normal free-zoom
+      // viewer for whatever map/mode the user already has selected.
+      function refreshTileSources() {
+        if (!active) return;
+        if (ui.viewMode.value === "topographic") {
+          for (const vector of [
+            terrainVector,
+            surfaceVector,
+            waterVector,
+            objectVector,
+          ])
+            if (vector && map.hasLayer(vector)) map.removeLayer(vector);
+          terrainVector = surfaceVector = waterVector = objectVector = null;
+          selectViewMode();
+        } else {
+          if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+          layer = null;
+          const satelliteCoverage = active.activeFinalCoverage?.satellite || [],
+            satelliteNative = Math.max(
+              active.web?.maxNativeZoom || 6,
+              ...satelliteCoverage,
+            );
+          if (active.web?.baseTiles)
+            layer = L.tileLayer(
+              `${productionBase(active.id, "satellite")}/{z}/{x}/{y}.png`,
+              {
+                minZoom: 0,
+                maxZoom: 10,
+                maxNativeZoom: satelliteNative,
+                noWrap: true,
+                bounds: worldBounds,
+                keepBuffer: 4,
+              },
+            ).addTo(map);
+        }
+      }
+      // Redraw (not rebuild) currently-shown tile layers so newly-written
+      // production tiles appear without disturbing the user's pan/zoom.
+      // Only meaningful while watching a running job's own map/mode.
+      function redrawLiveTiles() {
+        if (!ui.viewProductionOutput.checked || !active) return;
+        if (
+          ui.viewMode.value === "topographic"
+            ? terrainVector
+            : layer
+        )
+          for (const item of [
+            layer,
+            terrainVector,
+            surfaceVector,
+            waterVector,
+            objectVector,
+          ])
+            item?.redraw?.();
+      }
+      let activeFinalJob = null;
+      async function pollFinalBuild(id) {
+        const job = await fetch(`/api/map-render/jobs/${id}`).then((r) =>
+          r.json(),
+        );
+        activeFinalJob = job;
+        showFinalProgress(job);
+        ui.cancelFinalBuild.hidden = job.status !== "running";
+        ui.retryFinalBuild.hidden = ![
+          "failed",
+          "cancelled",
+          "interrupted",
+        ].includes(job.status);
+        ui.dismissFinalJob.hidden = job.status === "running";
+        redrawLiveTiles();
+        if (job.status === "running") {
+          setTimeout(() => pollFinalBuild(id), 700);
+          return;
+        }
+        ui.startFinalBuild.disabled = false;
+        maps = (await fetch("/api/map-render/maps").then((r) => r.json())).maps;
+        ui.status.textContent =
+          job.status === "complete"
+            ? `Final tile version ${job.version} is active`
+            : job.error || "Final render failed";
+      }
+      async function startFinalBuild() {
+        const modes = [];
+        if (ui.finalSatellite.checked) modes.push("satellite");
+        if (ui.finalTopographic.checked) modes.push("topographic");
+        if (!modes.length) {
+          ui.status.textContent = "Select at least one final render mode";
+          return;
+        }
+        const missingOnly = ui.finalMissingOnly.checked;
+        // "Missing tiles only" + "All layers" means auto-detect: the server
+        // scans disk per map and repairs whatever topographic layers/tiles
+        // are actually absent, across as many zooms as selected, in one
+        // request - no need to pick a single layer/zoom by hand.
+        const layersAuto = missingOnly && ui.finalLayer.value === "all";
+        const layers = layersAuto
+          ? "auto"
+          : ui.finalLayer.value === "all"
+            ? []
+            : [ui.finalLayer.value];
+        if (
+          !missingOnly &&
+          Array.isArray(layers) &&
+          layers.length &&
+          ui.finalZoom.value === "all"
+        ) {
+          ui.status.textContent =
+            "Choose one zoom level when regenerating a specific layer";
+          return;
+        }
+        if (layersAuto || (Array.isArray(layers) && layers.length))
+          modes.splice(0, modes.length, "topographic");
+        ui.startFinalBuild.disabled = true;
+        ui.finalProgress.innerHTML = progressRow("Starting", 0, 1);
+        const response = await fetch("/api/map-render/final-build", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              maps: ui.finalMap.value === "all" ? "all" : [ui.finalMap.value],
+              zooms:
+                ui.finalZoom.value === "all"
+                  ? missingOnly
+                    ? // z5/z6 water & objects gaps are almost all
+                      // legitimate sparse/empty tiles rather than bugs, and
+                      // since every tile pays the same full render cost
+                      // regardless of outcome, defaulting the repair sweep
+                      // to z1-z4 catches the real bugs without paying ~19x
+                      // more render time confirming already-correct gaps.
+                      // Pick a specific zoom above to reach z5/z6 anyway.
+                      [1, 2, 3, 4]
+                    : "all"
+                  : [Number(ui.finalZoom.value)],
+              modes,
+              layers,
+              missingOnly,
+              version: ui.finalVersion.value.trim(),
+              workers: Number(ui.finalWorkers.value),
+            }),
+          }),
+          job = await response.json();
+        if (!response.ok) {
+          ui.startFinalBuild.disabled = false;
+          ui.status.textContent = job.error;
+          ui.finalProgress.innerHTML = "";
+          return;
+        }
+        pollFinalBuild(job.id);
+      }
+      async function cancelFinalBuild() {
+        if (!activeFinalJob) return;
+        ui.cancelFinalBuild.disabled = true;
+        const response = await fetch(
+            `/api/map-render/jobs/${activeFinalJob.id}/cancel`,
+            { method: "POST" },
+          ),
+          result = await response.json();
+        ui.cancelFinalBuild.disabled = false;
+        ui.status.textContent = response.ok
+          ? "Render cancelled safely; completed tiles are preserved"
+          : result.error;
+        pollFinalBuild(activeFinalJob.id);
+      }
+      async function refreshFinalJobs() {
+        const result = await fetch("/api/map-render/final-jobs").then((r) =>
+          r.json(),
+        );
+        const job = result.jobs?.[0];
+        if (!job) {
+          activeFinalJob = null;
+          ui.finalProgress.innerHTML = '<div class="sub">No render jobs</div>';
+          ui.cancelFinalBuild.hidden = true;
+          ui.retryFinalBuild.hidden = true;
+          ui.dismissFinalJob.hidden = true;
+          return;
+        }
+        activeFinalJob = job;
+        showFinalProgress(job);
+        ui.cancelFinalBuild.hidden = job.status !== "running";
+        ui.retryFinalBuild.hidden = !["failed", "cancelled", "interrupted"].includes(job.status);
+        ui.dismissFinalJob.hidden = job.status === "running";
+        if (job.status === "running") pollFinalBuild(job.id);
+      }
+      async function dismissFinalJob() {
+        if (!activeFinalJob) return;
+        const response = await fetch(`/api/map-render/jobs/${activeFinalJob.id}`, { method: "DELETE" }),result=await response.json();
+        ui.status.textContent = response.ok ? "Job removed from local history; generated tiles were not deleted" : result.error;
+        if (response.ok) await refreshFinalJobs();
+      }
+      async function clearGeneratedTiles() {
+        const modes=[];if(ui.finalSatellite.checked)modes.push("satellite");if(ui.finalTopographic.checked)modes.push("topographic");
+        if(!modes.length){ui.status.textContent="Select at least one mode to clear";return}
+        const mapsToClear=ui.finalMap.value==="all"?"all":[ui.finalMap.value],zooms=ui.finalZoom.value==="all"?Array.from({length:9},(_,z)=>z):[Number(ui.finalZoom.value)],version=ui.finalVersion.value.trim();
+        const scope=`${ui.finalMap.value} · ${modes.join(" + ")} · ${ui.finalZoom.value==="all"?"z0–8":`z${ui.finalZoom.value}`} · ${version}`;
+        if(!confirm(`Delete generated tiles for ${scope}? Source and fallback files will not be touched.`))return;
+        ui.clearGeneratedTiles.disabled=true;const response=await fetch("/api/map-render/clear-tiles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({maps:mapsToClear,zooms,modes,version})}),result=await response.json();ui.clearGeneratedTiles.disabled=false;
+        ui.status.textContent=response.ok?`Cleared ${result.removed.length} generated tile directories for ${scope}`:result.error;
+        if(response.ok){maps=(await fetch("/api/map-render/maps").then(r=>r.json())).maps;selectMap(active.id)}
+      }
+      function retryFinalBuild() {
+        if (!activeFinalJob) return;
+        ui.finalMap.value =
+          activeFinalJob.maps.length === maps.length
+            ? "all"
+            : activeFinalJob.maps[0];
+        ui.finalZoom.value =
+          activeFinalJob.zooms.length === 9
+            ? "all"
+            : String(activeFinalJob.zooms[0]);
+        ui.finalVersion.value = activeFinalJob.version;
+        ui.finalWorkers.value = activeFinalJob.workers;
+        ui.finalWorkersValue.textContent = activeFinalJob.workers;
+        ui.finalSatellite.checked = activeFinalJob.modes.includes("satellite");
+        ui.finalTopographic.checked =
+          activeFinalJob.modes.includes("topographic");
+        ui.finalLayer.value =
+          activeFinalJob.layers === "auto"
+            ? "all"
+            : activeFinalJob.layers?.[0] || "all";
+        ui.finalMissingOnly.checked = Boolean(activeFinalJob.missingOnly);
+        startFinalBuild();
+      }
+      // Dedicated entry point for tile repair, decoupled from whatever the
+      // layer/missing-only/version controls happen to be set to - always
+      // forces the safe auto-detect-and-repair-only path (topographic
+      // mode, all layers, missing tiles only) against whichever version is
+      // already active in production, regardless of current form state.
+      // The version field's own default ("v1") doesn't even match the real
+      // active version, so a repair must never depend on it - trusting a
+      // stale/mistyped value there would silently spin up a brand-new,
+      // empty version tree instead of repairing the live one.
+      async function repairMissingTiles() {
+        const freshMaps = (
+          await fetch("/api/map-render/maps").then((r) => r.json())
+        ).maps;
+        maps = freshMaps;
+        const targetIds =
+          ui.finalMap.value === "all"
+            ? freshMaps.map((m) => m.id)
+            : [ui.finalMap.value];
+        const targetMaps = freshMaps.filter((m) => targetIds.includes(m.id));
+        const versions = new Set(
+          targetMaps.map((m) => m.activeFinalVersion).filter(Boolean),
+        );
+        if (!versions.size) {
+          ui.status.textContent =
+            "No active tile-set version found for the selected map(s) - nothing to repair";
+          return;
+        }
+        if (versions.size > 1) {
+          ui.status.textContent = `Selected maps are on different active versions (${[...versions].join(", ")}) - select one map at a time to repair`;
+          return;
+        }
+        ui.finalVersion.value = [...versions][0];
+        ui.finalTopographic.checked = true;
+        ui.finalLayer.value = "all";
+        ui.finalMissingOnly.checked = true;
+        startFinalBuild();
+      }
+      ui.toggleFinalPanel.addEventListener("click", () =>
+        setFinalPanel(ui.finalPanel.hidden),
+      );
+      ui.closeFinalPanel.addEventListener("click", () => setFinalPanel(false));
+      ui.toggleRenderPoolPanel.addEventListener("click", () =>
+        setRenderPoolPanel(ui.renderPoolPanel.hidden),
+      );
+      ui.closeRenderPoolPanel.addEventListener("click", () => setRenderPoolPanel(false));
+      ui.buildWorkerPackage.addEventListener("click", buildWorkerPackage);
+      ui.startFinalBuild.addEventListener("click", startFinalBuild);
+      ui.repairMissingTiles.addEventListener("click", repairMissingTiles);
+      ui.cancelFinalBuild.addEventListener("click", cancelFinalBuild);
+      ui.retryFinalBuild.addEventListener("click", retryFinalBuild);
+      ui.refreshFinalJobs.addEventListener("click", refreshFinalJobs);
+      ui.dismissFinalJob.addEventListener("click", dismissFinalJob);
+      ui.clearGeneratedTiles.addEventListener("click", clearGeneratedTiles);
+      ui.finalWorkers.addEventListener(
+        "input",
+        () => (ui.finalWorkersValue.textContent = ui.finalWorkers.value),
+      );
+      for (const control of [
+        ui.showTopoTerrain,
+        ui.showTopoSurfaces,
+        ui.showTopoWater,
+        ui.showTopoObjects,
+      ]) control.addEventListener("change", applyTopoLayerVisibility);
+      ui.inspectTopoSurfaces.addEventListener("change",()=>{if(ui.inspectTopoSurfaces.checked)ui.showTopoObjects.checked=false;applyTopoLayerVisibility()});
+      ui.viewProductionOutput.addEventListener("change", refreshTileSources);
+      ui.mapSelect.addEventListener("change", () =>
+        selectMap(ui.mapSelect.value),
+      );
+      ui.viewMode.addEventListener("change", selectViewMode);
+      ui.preview.addEventListener("click", startPreview);
+      ui.close.addEventListener(
+        "click",
+        () => (ui.results.style.display = "none"),
+      );
+      init().catch((e) => (ui.status.textContent = e.message));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+node_modules/
+output/
+*.bmp
+*.p3d
+*.png
+*.geojson
+!example-output/.gitkeep

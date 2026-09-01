@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Render Pool Status</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0e12;
+        --panel: #15191f;
+        --line: #2a313b;
+        --accent: #68b5ff;
+        --muted: #9aa6b2;
+        --danger: #ff6b6b;
+        --warn: #e8b64c;
+        --ok: #4caf7d;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: #e6e9ee;
+        font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px 18px;
+        margin-bottom: 16px;
+      }
+      .card h2 {
+        font-size: 14px;
+        margin: 0 0 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .progress-row { margin-bottom: 12px; }
+      .progress-row:last-child { margin-bottom: 0; }
+      .progress-row .label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+      .progress-row .label b { text-transform: capitalize; }
+      .progress-row .detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
+      .progress-track {
+        height: 10px;
+        background: #090c10;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+      .progress-fill.complete { background: var(--ok); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td {
+        text-align: left;
+        padding: 7px 8px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      th { color: var(--muted); font-weight: 500; font-size: 12px; }
+      tr.stuck { background: rgba(255, 107, 107, 0.08); }
+      tr.stuck td:nth-child(2) { color: var(--danger); font-weight: 600; }
+      .badge {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 99px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .badge.local { background: rgba(104, 181, 255, 0.15); color: var(--accent); }
+      .badge.remote { background: rgba(76, 175, 125, 0.15); color: var(--ok); }
+      .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+      .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+      .tile-card {
+        display: block; text-decoration: none; color: inherit;
+        background: #0d1117; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+        transition: border-color 0.15s;
+      }
+      .tile-card:hover { border-color: var(--accent); }
+      .tile-card .thumb {
+        width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #090c10;
+      }
+      .tile-card .thumb-placeholder {
+        width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+        color: var(--muted); font-size: 11px; background: #090c10;
+      }
+      .tile-card .meta { padding: 6px 8px; font-size: 11px; }
+      .tile-card .meta .coords { color: #e6e9ee; font-weight: 600; }
+      .tile-card .meta .worker { color: var(--muted); margin-top: 2px; }
+      .tile-card.fresh { border-color: var(--ok); }
+      #updated { color: var(--muted); font-size: 12px; }
+      .top-bar { display: flex; justify-content: space-between; align-items: baseline; }
+    </style>
+  </head>
+  <body>
+    <div class="top-bar">
+      <div>
+        <h1>Render Pool Status</h1>
+        <div class="sub">Live view of all connected workers and per-map progress. Auto-refreshes every 2s.</div>
+      </div>
+      <div id="updated"></div>
+    </div>
+    <div class="card">
+      <h2>Maps</h2>
+      <div id="maps"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Workers</h2>
+      <div id="workers"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Recent Tiles</h2>
+      <div class="sub" style="margin-bottom: 10px">Live feed of tiles as workers finish them - click one to inspect full-size.</div>
+      <div id="recentTiles" class="tile-grid"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Add a worker machine</h2>
+      <div class="sub" style="margin-bottom: 10px">
+        On the new machine: download the package below, run <code>npm install</code>, then
+        <code>node tools/launch-workers.js --coordinator http://&lt;this-coordinator&gt;:8080 --count 8</code>.
+      </div>
+      <div id="packageStatus" class="empty">Loading…</div>
+      <div style="margin-top: 10px; display: flex; gap: 10px">
+        <button id="buildBtn" style="padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: #e6e9ee; cursor: pointer;">Build worker package</button>
+        <a id="downloadLink" href="/api/render-pool/package/download" download hidden style="padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent); background: rgba(104,181,255,0.12); color: var(--accent); text-decoration: none;">Download worker package</a>
+      </div>
+    </div>
+    <script>
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        })[c]);
+      }
+      function formatEta(seconds) {
+        if (seconds == null) return null;
+        if (seconds < 90) return "< 2 min remaining";
+        const minutes = Math.round(seconds / 60);
+        if (minutes < 60) return `~${minutes} min remaining`;
+        const hours = Math.floor(minutes / 60), remMinutes = minutes % 60;
+        if (hours < 24) return `~${hours}h ${remMinutes}m remaining`;
+        const days = Math.floor(hours / 24), remHours = hours % 24;
+        return `~${days}d ${remHours}h remaining`;
+      }
+      function progressRow(label, completed, total, detail) {
+        const percent = total ? Math.max(0, Math.min(100, Math.round((completed / total) * 100))) : 0;
+        const complete = completed >= total && total > 0;
+        return `<div class="progress-row">
+          <div class="label"><b>${escapeHtml(label)}</b><span>${completed}/${total} · ${percent}%</span></div>
+          <div class="progress-track"><div class="progress-fill${complete ? " complete" : ""}" style="width:${percent}%"></div></div>
+          ${detail ? `<div class="detail">${escapeHtml(detail)}</div>` : ""}
+        </div>`;
+      }
+      function elapsedSeconds(iso) {
+        return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+      }
+      function elapsedText(seconds) {
+        if (seconds < 60) return `${seconds}s`;
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes}m ${seconds % 60}s`;
+      }
+      // A z2-z8 tile normally finishes in well under a minute (measured
+      // typically 5-40s); flag anything running past this as a likely
+      // stuck/hung task worth a manual look, rather than only relying on
+      // the coordinator's much longer 5-minute lease timeout to notice.
+      const STUCK_THRESHOLD_SECONDS = 90;
+      async function poll() {
+        try {
+          const [jobsRes, statusRes] = await Promise.all([
+            fetch("/api/render-pool/jobs").then((r) => r.json()),
+            fetch("/api/render-pool/status").then((r) => r.json()),
+          ]);
+          document.getElementById("maps").innerHTML = jobsRes.jobs.length
+            ? jobsRes.jobs
+                .map((job) => {
+                  const done = job.counts.complete + job.counts.broken;
+                  const eta = formatEta(job.etaSeconds);
+                  const detail =
+                    `${job.counts.pending} pending · ${job.counts.leased} in flight` +
+                    (job.counts.broken ? ` · ${job.counts.broken} broken` : "") +
+                    (job.skippedAlreadyDone ? ` · ${job.skippedAlreadyDone} already done (resumed)` : "") +
+                    (eta ? ` · ${eta}` : job.status === "running" ? " · estimating…" : "") +
+                    (job.tilesPerMinute ? ` (${job.tilesPerMinute.toFixed(1)} tiles/min)` : "");
+                  return progressRow(`${job.mapId} — ${job.status}`, done, job.totalTasks, detail);
+                })
+                .join("")
+            : `<div class="empty">No distributed render jobs yet.</div>`;
+
+          const workers = statusRes.workers.slice().sort((a, b) => a.label.localeCompare(b.label));
+          document.getElementById("workers").innerHTML = workers.length
+            ? `<table><thead><tr><th>Worker</th><th>Current task</th><th>Running</th><th>Done</th><th>Failed</th><th>Last seen</th></tr></thead><tbody>${workers
+                .map((worker) => {
+                  const running = worker.currentTask ? elapsedSeconds(worker.currentTask.startedAt) : 0;
+                  const stuck = worker.currentTask && running > STUCK_THRESHOLD_SECONDS;
+                  const task = worker.currentTask
+                    ? `${worker.currentTask.mapId} z${worker.currentTask.zoom} ${worker.currentTask.tx}/${worker.currentTask.ty} (${worker.currentTask.modes.join(",")})`
+                    : "idle";
+                  const badge = /^mac/i.test(worker.label) || /macbook/i.test(worker.label)
+                    ? '<span class="badge remote">remote</span>'
+                    : '<span class="badge local">local</span>';
+                  return `<tr class="${stuck ? "stuck" : ""}">
+                    <td>${badge} ${escapeHtml(worker.label)}</td>
+                    <td>${escapeHtml(task)}${stuck ? " ⚠" : ""}</td>
+                    <td>${worker.currentTask ? elapsedText(running) : "—"}</td>
+                    <td>${worker.tasksCompleted || 0}</td>
+                    <td>${worker.tasksFailed || 0}</td>
+                    <td>${elapsedText(elapsedSeconds(worker.lastSeen))} ago</td>
+                  </tr>`;
+                })
+                .join("")}</tbody></table>`
+            : `<div class="empty">No workers connected.</div>`;
+
+          document.getElementById("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        } catch (error) {
+          document.getElementById("updated").textContent = `Failed to load: ${error.message}`;
+        }
+        await pollRecentTiles();
+        await pollPackage();
+        setTimeout(poll, 2000);
+      }
+      let lastSeenTileKey = null;
+      async function pollRecentTiles() {
+        try {
+          const { tiles } = await fetch("/api/render-pool/recent-tiles").then((r) => r.json());
+          const container = document.getElementById("recentTiles");
+          if (!tiles.length) { container.innerHTML = `<div class="empty">No tiles rendered yet.</div>`; return; }
+          const newestKey = `${tiles[0].mapId}/${tiles[0].zoom}/${tiles[0].tx}/${tiles[0].ty}/${tiles[0].completedAt}`;
+          container.innerHTML = tiles
+            .map((t, index) => {
+              const url = `/api/map-render/final-tile/${t.mapId}/satellite/${t.zoom}/${t.tx}/${t.ty}.png?t=${encodeURIComponent(t.completedAt)}`;
+              const hasSatellite = t.modes.includes("satellite");
+              const fresh = index === 0 && newestKey !== lastSeenTileKey;
+              const thumb = hasSatellite
+                ? `<img class="thumb" src="${url}" loading="lazy" alt="z${t.zoom} ${t.tx}/${t.ty}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'thumb-placeholder',textContent:'no satellite'}))" />`
+                : `<div class="thumb-placeholder">topo only</div>`;
+              return `<a class="tile-card${fresh ? " fresh" : ""}" href="${url}" target="_blank" rel="noopener" title="${t.mapId} z${t.zoom} ${t.tx}/${t.ty} - ${t.workerLabel}">
+                ${thumb}
+                <div class="meta">
+                  <div class="coords">${t.mapId} z${t.zoom} ${t.tx}/${t.ty}</div>
+                  <div class="worker">${escapeHtml(t.workerLabel)} · ${elapsedText(elapsedSeconds(t.completedAt))} ago</div>
+                </div>
+              </a>`;
+            })
+            .join("");
+          lastSeenTileKey = newestKey;
+        } catch {
+          // Non-fatal - leave whatever was last shown.
+        }
+      }
+      async function pollPackage() {
+        const statusEl = document.getElementById("packageStatus");
+        const buildBtn = document.getElementById("buildBtn");
+        const downloadLink = document.getElementById("downloadLink");
+        try {
+          const pkg = await fetch("/api/render-pool/package/status").then((r) => r.json());
+          const sizeText = pkg.sizeBytes ? ` (${(pkg.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GiB)` : "";
+          if (pkg.status === "building") {
+            statusEl.textContent = `Building…${pkg.progress?.length ? " " + pkg.progress[pkg.progress.length - 1] : ""}`;
+            buildBtn.disabled = true;
+            downloadLink.hidden = true;
+          } else if (pkg.status === "ready") {
+            statusEl.textContent = `Package ready${sizeText}.`;
+            buildBtn.disabled = false;
+            buildBtn.textContent = "Rebuild worker package";
+            downloadLink.hidden = false;
+          } else if (pkg.status === "failed") {
+            statusEl.textContent = `Build failed: ${pkg.error || "unknown error"}`;
+            buildBtn.disabled = false;
+            downloadLink.hidden = true;
+          } else {
+            statusEl.textContent = "No package built yet.";
+            buildBtn.disabled = false;
+            downloadLink.hidden = true;
+          }
+        } catch {
+          // Non-fatal - leave whatever status text was last shown.
+        }
+      }
+      document.getElementById("buildBtn").addEventListener("click", async () => {
+        const statusEl = document.getElementById("packageStatus");
+        const buildBtn = document.getElementById("buildBtn");
+        buildBtn.disabled = true;
+        statusEl.textContent = "Starting build…";
+        try {
+          const response = await fetch("/api/render-pool/package/build", { method: "POST" });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            statusEl.textContent = body.error || "Failed to start build";
+            buildBtn.disabled = false;
+            return;
+          }
+        } catch (error) {
+          statusEl.textContent = `Failed to start build: ${error.message}`;
+          buildBtn.disabled = false;
+          return;
+        }
+        pollPackage();
+      });
+      poll();
+    </script>
+  </body>
+</html>

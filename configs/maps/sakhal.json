@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "sakhal",
+  "displayName": "Sakhal",
+  "world": "sakhal",
+  "mapSize": 15360,
+  "coordinateSystem": { "origin": "southwest", "xAxis": "east", "zAxis": "north" },
+  "placements": {
+    "type": "runtime-export",
+    "sourceDirectory": "P:\\map-render-data\\sakhal\\runtime-export",
+    "summary": "P:\\map-render-data\\sakhal\\runtime-export\\sakhal-placement-summary.tsv",
+    "exporter": "../../ebo/runtime-export/init.c"
+  },
+  "water": { "source": "terrain-elevation", "belowElevation": 0 },
+  "wrp": "P:\\DZ\\worlds\\sakhal\\world\\sakhal.wrp",
+  "assetRoot": "P:\\",
+  "transformIndex": "../../out/mapdraw/index/sakhal",
+  "elevation": {
+    "file": "P:\\map-render-data\\sakhal\\sakhal_elevation.bin",
+    "width": 1537,
+    "height": 1537
+  },
+  "satellite": {
+    "type": "compiled-layers",
+    "layerDirectory": "P:\\DZ\\worlds\\sakhal\\data\\layers",
+    "surfaceDirectory": "P:\\DZ\\surfaces_sakhal\\data\\terrain",
+    "layerGrid": 32,
+    "sourceTilePixels": 512,
+    "sourceBorderPixels": 16,
+    "detailWorldSize": 4,
+    "materials": [
+      "sakhal_beach", "sakhal_concrete", "sakhal_forest_birch",
+      "sakhal_forest_spruce", "sakhal_grass_brown", "sakhal_grass_green",
+      "sakhal_gravel", "sakhal_ice_lake", "sakhal_ice_sea", "sakhal_snow",
+      "sakhal_snow_forest", "sakhal_volcanic_red", "sakhal_volcanic_yellow"
+    ]
+  },
+  "output": "../../out/mapdraw/builds/sakhal",
+  "web": {
+    "baseTiles": "/data/Sakhal/Sat/{z}/{x}/{y}.png",
+    "maxNativeZoom": 6
+  },
+  "preview": {
+    "x": 7680,
+    "z": 7680,
+    "meters": 1000,
+    "zoom": 8,
+    "detailStrength": 0.5
+  }
+}

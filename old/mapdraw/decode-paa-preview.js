@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+const fs=require('fs'),path=require('path'),{pathToFileURL}=require('url');
+const {createCanvas,ImageData}=require('@napi-rs/canvas');
+(async()=>{const input=process.argv[2],output=process.argv[3];const {Paa}=await import(pathToFileURL(path.resolve(__dirname,'../../vendor/BIS-Toolkit/packages/paa/dist/index.js')));const source=fs.readFileSync(input),paa=new Paa();paa.read(source);const bgra=paa.getArgb32PixelData(source,0),rgba=new Uint8ClampedArray(bgra.length);for(let i=0;i<bgra.length;i+=4){rgba[i]=bgra[i+2];rgba[i+1]=bgra[i+1];rgba[i+2]=bgra[i];rgba[i+3]=bgra[i+3]}const {width,height}=paa.mipmaps[0],c=createCanvas(width,height);c.getContext('2d').putImageData(new ImageData(rgba,width,height),0,0);fs.writeFileSync(output,c.toBuffer('image/png'));})().catch(e=>{console.error(e);process.exitCode=1});

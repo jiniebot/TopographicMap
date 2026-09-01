@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "livonia",
+  "displayName": "Livonia",
+  "world": "enoch",
+  "mapSize": 12800,
+  "coordinateSystem": { "origin": "southwest", "xAxis": "east", "zAxis": "north" },
+  "water": { "source": "terrain-elevation", "belowElevation": 0 },
+  "wrp": "P:\\DZ\\worlds\\enoch\\world\\enoch.wrp",
+  "assetRoot": "P:\\",
+  "transformIndex": "../../out/mapdraw/index/enoch",
+  "elevation": {
+    "file": "P:\\map-render-data\\livonia\\livonia_elevation.bin",
+    "width": 1281,
+    "height": 1281
+  },
+  "satellite": {
+    "type": "compiled-layers",
+    "layerDirectory": "P:\\DZ\\worlds\\enoch\\data\\layers",
+    "surfaceDirectory": "P:\\DZ\\surfaces_bliss\\data\\terrain",
+    "layerGrid": 32,
+    "sourceTilePixels": 512,
+    "sourceBorderPixels": 16,
+    "detailWorldSize": 4,
+    "materials": [
+      "en_deforested", "en_flowers1", "en_flowers2", "en_flowers3",
+      "en_forest_con", "en_forest_dec", "en_grass1", "en_grass2",
+      "en_soil", "en_stones", "en_stubble", "en_tarmac_old"
+    ]
+  },
+  "output": "../../out/mapdraw/builds/livonia",
+  "web": {
+    "baseTiles": "/data/Livonia/Sat/{z}/{x}/{y}.png",
+    "maxNativeZoom": 6
+  },
+  "preview": {
+    "x": 6600,
+    "z": 8930,
+    "meters": 1000,
+    "zoom": 8,
+    "detailStrength": 0.5
+  }
+}
