@@ -82,6 +82,20 @@ Object Spawner rock names often contain a P3D path instead of a class name.
 `--base` preserves existing mappings and assets, linking unchanged local files.
 Release `54570be64561c22522efc436` contains 2,513 entries and 2,310 sprites,
 including 35 Chernarus, 22 Livonia, and 42 Sakhal rock model paths.
+
+Final rock release `5d1080f1bdfd9a40055ec173` adds the two uncached ordinary
+models: `dz/rocks/rock_bright_monolith2.p3d` and
+`dz/rocks_bliss/stone7_trail_g.p3d`. Both raster and vector caches were generated
+with `tools/mapdraw/debin-model.js`, `render-model-top.js` (512 px), and
+`extract-model-footprint.js` from the stable DayZ Projects ODOL v54 sources;
+the local Experimental v56 files are not supported by the current converter.
+Export the updated caches with the preceding rock release as `--base` and
+`--out out/mapdraw/inventory-sprites-rocks-complete`.
+This release has 2,515 entries, 2,312 sprites, and 2,310 vector footprints:
+36 ordinary Chernarus, all 23 ordinary Livonia, and 42 cached Sakhal rock paths.
+Legacy Chernarus `snow_rocks` variants are not included in these counts.
+The public CDN release contains 4,623 files totaling 472,261,978 bytes;
+unchanged assets are hardlinked at the origin, and generated files stay ignored.
 - 2,414 class mappings, 2,255 raster sprites, 2,253 topographic footprints; none of the previous 550 classes were lost.
 - 4,509 public files / 454,586,102 bytes (433.5 MiB), generated from the combined Chernarus/Livonia/Sakhal caches.
 - CDN prefix: https://jiniebot.com/tiles/inventory-sprites/61b8cb0a1f6a1ac4d7292286
