@@ -71,6 +71,17 @@ node preflight/cache/export-inventory-sprites.js --runtime ebo/runtime-export/pr
 The config importer reads CfgVehicles from all DZ config.cpp files, including structures, structures_bliss and structures_sakhal. It resolves inherited model values and rejects conflicting/cyclic definitions. The generated report lists parse failures; review it before publishing. It does not guess StaticObj aliases from model names. The sprite exporter joins these verified classes against all three raster/vector caches. Classes with no complete cached raster still need rendering before they can be published. Mapping exports and assets remain ignored generated data.
 
 Expanded release published 2026-10-10: 61b8cb0a1f6a1ac4d7292286.
+
+Rock model-path expansion:
+```sh
+node preflight/cache/export-inventory-sprites.js --base out/mapdraw/inventory-sprites-expanded/catalog.json --rock-paths --out out/mapdraw/inventory-sprites-rocks
+```
+Object Spawner rock names often contain a P3D path instead of a class name.
+`--rock-paths` adds exact complete cached models from `dz/rocks`,
+`dz/rocks_bliss`, and `dz/rocks_sakhal`; it does not guess class aliases.
+`--base` preserves existing mappings and assets, linking unchanged local files.
+Release `54570be64561c22522efc436` contains 2,513 entries and 2,310 sprites,
+including 35 Chernarus, 22 Livonia, and 42 Sakhal rock model paths.
 - 2,414 class mappings, 2,255 raster sprites, 2,253 topographic footprints; none of the previous 550 classes were lost.
 - 4,509 public files / 454,586,102 bytes (433.5 MiB), generated from the combined Chernarus/Livonia/Sakhal caches.
 - CDN prefix: https://jiniebot.com/tiles/inventory-sprites/61b8cb0a1f6a1ac4d7292286

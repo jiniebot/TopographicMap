@@ -8,7 +8,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const normalize = value => String(value).replace(/\//g, '\\').replace(/^\\+/, '').toLowerCase();
 const digest = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 
-async function exportSprites({ root = ROOT, mappings, runtime, output }) {
+async function exportSprites({ root = ROOT, mappings, runtime, output, baseCatalog, rockPaths = false }) {
   const classes = new Map(), conflicts = new Set();
   const add = (name, model) => {
     if (!name || !model || name === 'class') return;
@@ -34,7 +34,18 @@ async function exportSprites({ root = ROOT, mappings, runtime, output }) {
     }
   }
   fs.mkdirSync(output, { recursive: true });
-  const catalog = { schemaVersion: 1, classes: {}, sprites: {} };
+  const base = baseCatalog ? JSON.parse(fs.readFileSync(baseCatalog,'utf8')) : null;
+  const catalog = { schemaVersion: 1, classes: {...base?.classes}, sprites: {...base?.sprites} };
+  if(base) for(const [id,sprite] of Object.entries(base.sprites)) {
+    if(!/^[a-f0-9]{24}$/.test(id) || sprite.image!==`${id}.png` || (sprite.topographic && sprite.topographic!==`${id}.json`)) throw Error('Invalid base sprite');
+    for(const name of [sprite.image,sprite.topographic].filter(Boolean)) {
+      const target=path.join(output,name), source=path.join(path.dirname(baseCatalog),name);
+      if(!fs.existsSync(target)) {try{fs.linkSync(source,target);}catch(error){if(error.code!=='EXDEV')throw error;fs.copyFileSync(source,target);}}
+    }
+  }
+  // Object Spawner accepts P3D paths as names. The cache itself verifies these
+  // exact models; this does not invent Static_* class aliases from filenames.
+  if(rockPaths) for(const model of models.keys()) if(/^dz\\rocks(?:_bliss|_sakhal)?\\/i.test(model)) add(model,model);
   let bytes = 0;
   for (const [name, model] of [...classes].sort(([a], [b]) => a.localeCompare(b))) {
     if (conflicts.has(name)) continue;
@@ -73,7 +84,7 @@ async function exportSprites({ root = ROOT, mappings, runtime, output }) {
 }
 if (require.main === module) {
   const option = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
-  exportSprites({ mappings: option('--classes'), runtime: option('--runtime'), output: path.resolve(option('--out') || path.join(ROOT, 'out/mapdraw/inventory-sprites')) })
+  exportSprites({ mappings: option('--classes'), runtime: option('--runtime'), baseCatalog:option('--base'), rockPaths:process.argv.includes('--rock-paths'), output: path.resolve(option('--out') || path.join(ROOT, 'out/mapdraw/inventory-sprites')) })
     .then(result => console.log(JSON.stringify(result))).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
 module.exports = { exportSprites };
