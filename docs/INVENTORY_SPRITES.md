@@ -103,3 +103,12 @@ unchanged assets are hardlinked at the origin, and generated files stay ignored.
 - Existing CDN files were hard-linked into the new staging release; changed files were unlinked before extraction so the old immutable catalog remained intact. All published files were verified against SHA-256 hashes.
 - nginx caches missing files for 120 seconds. Do not probe a release URL before promotion; if accidentally probed, wait for negative-cache expiry or validate nginx configuration and gracefully reload before verification.
 - Dev Water World reclassification: 29 ready files; 2,189 PRA bytes fetched, object JSONs reused from cache; unchanged repeat downloaded zero bytes. Read-only drawing check: 36,742 eligible placements after tiny/tilted filters, including normal-scale water planes. The viewport rendering budget still applies.
+
+Release `09e5e66f2a16cb61280d4a2c` shares regular and `_NoLC` model sprites
+and topographic geometry. Both class names (from verified mappings) and direct
+model paths resolve to the same asset; unrelated variants remain separate.
+It contains 2,606 entries and the same 2,312 cached sprites, with no new images.
+Build with `--base out/mapdraw/inventory-sprites-rocks-complete/catalog.json
+--classes out/mapdraw/inventory-class-models.json --out out/mapdraw/inventory-sprites-nolc`.
+The bot and web renderer permit pitch/roll through 45 degrees using an upright
+footprint approximation; tiny-object filtering remains unchanged.

@@ -37,3 +37,14 @@ test('rock path expansion retains the base release and only adds complete cached
     assert.equal(catalog.classes['dz\\rocks\\missing.p3d'],undefined);
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('NoLC and regular classes and paths share sprites in either cache direction',()=>{
+ const {shareNoLcSprites}=require('./export-inventory-sprites');
+ for(const cached of ['wall','wall_nolc']) {
+  const model='dz\\walls\\'+cached+'.p3d',entry={model,footprint:'sprite',status:'ready'};
+  const catalog={classes:{[cached]:entry,other:{model:'dz/other.p3d',footprint:'other',status:'ready'}},sprites:{sprite:{},other:{}}};
+  shareNoLcSprites(catalog,new Map([['wall','dz/walls/wall.p3d'],['wall_nolc','dz/walls/wall_nolc.p3d'],['wall_turn','dz/walls/wall_turn.p3d']]));
+  for(const name of ['wall','wall_nolc','dz\\walls\\wall.p3d','dz\\walls\\wall_nolc.p3d'])assert.equal(catalog.classes[name].footprint,'sprite');
+  assert.equal(catalog.classes.wall_turn,undefined);assert.equal(catalog.classes.other.footprint,'other');
+ }
+});

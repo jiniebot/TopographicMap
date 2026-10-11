@@ -8,6 +8,26 @@ const ROOT = path.resolve(__dirname, '../..');
 const normalize = value => String(value).replace(/\//g, '\\').replace(/^\\+/, '').toLowerCase();
 const digest = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 
+function shareNoLcSprites(catalog, mappings = new Map()) {
+  const known = new Map([...Object.entries(catalog.classes).map(([name, entry]) => [name, entry.model]), ...mappings]);
+  const groups = new Map();
+  for (const [name, model] of known) {
+    if (!model) continue;
+    const normalized = normalize(model), key = normalized.replace(/_nolc(?=\.p3d$)/, '');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({name, model:normalized, entry:catalog.classes[name]});
+  }
+  for (const [model, members] of groups) {
+    if (!members.some(item => /_nolc\.p3d$/.test(item.model))) continue;
+    const available = members.filter(item => item.entry?.status === 'ready' && catalog.sprites[item.entry.footprint]);
+    const source = available.find(item => item.model === model) || available[0];
+    if (!source) continue;
+    for (const item of members) catalog.classes[item.name] = {...source.entry, model:item.model};
+    // Both Object Spawner naming styles share the same cached image and geometry.
+    for (const name of [model, model.replace(/\.p3d$/, '_nolc.p3d')]) catalog.classes[name] = {...source.entry, model:name};
+  }
+}
+
 async function exportSprites({ root = ROOT, mappings, runtime, output, baseCatalog, rockPaths = false }) {
   const classes = new Map(), conflicts = new Set();
   const add = (name, model) => {
@@ -75,6 +95,7 @@ async function exportSprites({ root = ROOT, mappings, runtime, output, baseCatal
     }
     catalog.classes[name] = { model, footprint: id, status: 'ready' };
   }
+  shareNoLcSprites(catalog, classes);
   if (!Object.keys(catalog.classes).length) throw Error('No verified classes with cached sprites');
   catalog.version = digest(JSON.stringify(catalog));
   const temporary = path.join(output, `catalog.${process.pid}.tmp`);
@@ -87,4 +108,4 @@ if (require.main === module) {
   exportSprites({ mappings: option('--classes'), runtime: option('--runtime'), baseCatalog:option('--base'), rockPaths:process.argv.includes('--rock-paths'), output: path.resolve(option('--out') || path.join(ROOT, 'out/mapdraw/inventory-sprites')) })
     .then(result => console.log(JSON.stringify(result))).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
-module.exports = { exportSprites };
+module.exports = { exportSprites, shareNoLcSprites };
